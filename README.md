@@ -14,6 +14,11 @@ up to date state of the game", or anything else.
 
 Inspired by the [open source version of Codenames](https://github.com/jbowens/codenames/).
 
+This repo holds just the server code. The client code for
+Elm (and a bit of JavaScript) is at
+[https://github.com/niksilver/board-game-framework],
+which also includes (client) examples.
+
 ## Connecting to the server
 
 When a client connects to the server for the first time it is given a

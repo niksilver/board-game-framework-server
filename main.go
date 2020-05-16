@@ -72,6 +72,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		// The following calls may error, but we're exiting, so will ignore
 		ws.WriteMessage(websocket.CloseMessage, msg)
 		ws.Close()
+		Log.Warn("Superhub rejected client", "path", r.URL.Path)
 		return
 	}
 
@@ -83,6 +84,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		Pending: make(chan *Message),
 	}
 	c.Start()
+	Log.Info("Connected client", "id", clientID)
 }
 
 // annulCookieHandler sets up a websocket, annuls the client ID cookie,
@@ -95,6 +97,7 @@ func annulCookieHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ws.Close()
+	Log.Info("Annulled cookie")
 }
 
 // Just say hello
