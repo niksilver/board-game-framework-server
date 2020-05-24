@@ -133,6 +133,7 @@ func (c *Client) Start() {
 	c.pinger = time.NewTicker(pingFreq)
 	c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.WS.SetPongHandler(func(string) error {
+		tLog.Debug("Start.SetPongHandler: Received pong", "id", c.ID)
 		c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
@@ -219,7 +220,7 @@ sendLoop:
 				break sendLoop
 			}
 		case <-c.pinger.C:
-			tLog.Debug("client.sendExt, got ping", "id", c.ID)
+			tLog.Debug("client.sendExt, sending ping", "id", c.ID)
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, shut down
