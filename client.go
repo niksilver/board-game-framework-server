@@ -376,7 +376,7 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 				return false, false
 			}
 			// Send was okay
-			c.queue = c.queue[:len(c.queue)]
+			c.queue = c.queue[1:len(c.queue)]
 			c.qMux.Unlock()
 			if len(c.queue) == 0 {
 				fLog.Debug("Queue now empty; reselecting scenario")

@@ -952,6 +952,8 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	// Run a few sends for a client
 	sendMany := func(twsC chan *tConn, id string, sent *[]string) {
 		defer sessions.Done()
+		defer fLog.Debug("sendMany done", "id", id)
+
 		for i := 0; i < 5; i++ {
 			ws, _, err := dial(serv, game, id)
 			if err != nil {
@@ -964,6 +966,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			tws.close()
 			time.Sleep(time.Duration(rand.Intn(500)) * time.Millisecond)
 		}
+		fLog.Debug("Closing twsC", "id", id)
 		close(twsC)
 	}
 
@@ -989,6 +992,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			fLog.Debug("Received message", "id", id, "env", env)
 			if env.Intent != "Peer" {
 				continue
 			}
@@ -999,10 +1003,13 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	// Receive messages from a series of connections
 	receiveMany := func(twsC chan *tConn, id string, rcvd *[]string) {
 		defer sessions.Done()
+		defer fLog.Debug("receiveMany done", "id", id)
+
 		for {
 			tws, okay := <-twsC
 			if !okay {
 				// No more websockets
+				fLog.Debug("No more websockets", "id", id)
 				break
 			}
 			receive(tws, id, rcvd)
@@ -1019,9 +1026,11 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	sessions.Add(2)
 	go receiveMany(twsC1, "WS1", rcvd1)
 	go receiveMany(twsC2, "WS2", rcvd2)
+	fLog.Debug("Waiting on first sessions")
 	sessions.Wait()
 
 	// Get any remaining messages
+	fLog.Debug("Getting remaining messages")
 
 	ws1, _, err := dial(serv, game, "WS1")
 	if err != nil {
@@ -1032,6 +1041,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	sessions.Add(1)
 	go func() {
 		defer sessions.Done()
+		defer fLog.Debug("receive anon WS1 done")
 		receive(tws1, "WS1", rcvd1)
 	}()
 
@@ -1044,8 +1054,11 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	sessions.Add(1)
 	go func() {
 		defer sessions.Done()
+		defer fLog.Debug("receive anon WS2 done")
+		fLog.Debug("anon WS2 started")
 		receive(tws2, "WS2", rcvd2)
 	}()
+	fLog.Debug("Waiting on second sessions")
 	sessions.Wait()
 
 	// Check what was sent is what was received
