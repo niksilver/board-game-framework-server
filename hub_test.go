@@ -6,7 +6,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -639,7 +641,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	// Connect 3 clients in turn. When one leaves the remaining
 	// ones should get leaver messages.
 
-	game := "/hub.joiner.messages"
+	game := "/hub.leaver.messages"
 
 	// Connect the first client
 	ws1, _, err := dial(serv, game, "LV1")
@@ -906,5 +908,179 @@ func TestHub_NonReadingClientsDontBlock(t *testing.T) {
 	w.Wait()
 
 	// Check everything in the main app finishes
+	WG.Wait()
+}
+
+func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
+	// Logging for just this function
+	fLog := tLog.New("fn", "TestHub_ReconnectingClientsDontMissMessages")
+	fLog.Debug("Entering")
+
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect 2 clients in turn. Each will send messages and
+	// occasionally disconnect and reconnect. Both clients should
+	// still receive all messages.
+
+	game := "/hub.reconnecting"
+
+	// Connect, send a few messages, disconnect
+	// Meanwhile we'll receive the messages until there are no more websockets
+
+	sessions := sync.WaitGroup{}
+
+	// Send some messages on one connection
+	send := func(tws *tConn, id string, sent *[]string) {
+		rpt := rand.Intn(10)
+		for i := 0; i < rpt; i++ {
+			n := len(*sent)
+			msg := id + "." + strconv.Itoa(n)
+			err := tws.ws.WriteMessage(websocket.BinaryMessage, []byte(msg))
+			if err != nil {
+				t.Fatalf(
+					"Couldn't write message, n=%d, id=%s error '%s'",
+					n, id, err.Error(),
+				)
+			}
+			fLog.Debug("Wrote message okay", "msg", msg)
+			*sent = append(*sent, msg)
+			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+		}
+	}
+
+	// Run a few sends for a client
+	sendMany := func(twsC chan *tConn, id string, sent *[]string) {
+		defer sessions.Done()
+		for i := 0; i < 5; i++ {
+			ws, _, err := dial(serv, game, id)
+			if err != nil {
+				ws.Close()
+				t.Fatal(err)
+			}
+			tws := newTConn(ws, id)
+			twsC <- tws
+			send(tws, id, sent)
+			tws.close()
+			time.Sleep(time.Duration(rand.Intn(500)) * time.Millisecond)
+		}
+		close(twsC)
+	}
+
+	// Receive messages from one connection
+	receive := func(tws *tConn, id string, rcvd *[]string) {
+		reads := 0
+		for {
+			rr, timedOut := tws.readMessage(500)
+			if timedOut {
+				fLog.Debug("Timed out while reading", "id", id)
+				tws.close()
+				break
+			}
+			if rr.err != nil {
+				// Presume connection is closed
+				fLog.Debug("Read error, presume closed",
+					"reads", reads, "err", rr.err.Error())
+				break
+			}
+			reads++
+			var env Envelope
+			err := json.Unmarshal(rr.msg, &env)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if env.Intent != "Peer" {
+				continue
+			}
+			*rcvd = append(*rcvd, string(env.Body))
+		}
+	}
+
+	// Receive messages from a series of connections
+	receiveMany := func(twsC chan *tConn, id string, rcvd *[]string) {
+		defer sessions.Done()
+		for {
+			tws, okay := <-twsC
+			if !okay {
+				// No more websockets
+				break
+			}
+			receive(tws, id, rcvd)
+		}
+	}
+
+	// Run a number of send and receives for two clients
+	sent1, rcvd1, twsC1 := &[]string{}, &[]string{}, make(chan *tConn, 5)
+	sent2, rcvd2, twsC2 := &[]string{}, &[]string{}, make(chan *tConn, 5)
+
+	sessions.Add(2)
+	go sendMany(twsC1, "WS1", sent1)
+	go sendMany(twsC2, "WS2", sent2)
+	sessions.Add(2)
+	go receiveMany(twsC1, "WS1", rcvd1)
+	go receiveMany(twsC2, "WS2", rcvd2)
+	sessions.Wait()
+
+	// Get any remaining messages
+
+	ws1, _, err := dial(serv, game, "WS1")
+	if err != nil {
+		ws1.Close()
+		t.Fatal(err)
+	}
+	tws1 := newTConn(ws1, "WS1")
+	sessions.Add(1)
+	go func() {
+		defer sessions.Done()
+		receive(tws1, "WS1", rcvd1)
+	}()
+
+	ws2, _, err := dial(serv, game, "WS2")
+	if err != nil {
+		ws2.Close()
+		t.Fatal(err)
+	}
+	tws2 := newTConn(ws2, "WS2")
+	sessions.Add(1)
+	go func() {
+		defer sessions.Done()
+		receive(tws2, "WS2", rcvd2)
+	}()
+	sessions.Wait()
+
+	// Check what was sent is what was received
+	sliceDiff := func(a []string, b []string) string {
+		out := ""
+		for i := 0; i < maxLength(a, b); i++ {
+			switch {
+			case i < len(a) && i < len(b):
+				if a[i] == b[i] {
+					out += fmt.Sprintf("%d: ..... .....", i)
+				} else {
+					out += fmt.Sprintf("%d: %s %s", i, a[i], b[i])
+				}
+			case i < len(a):
+				out += fmt.Sprintf("%d: %s", i, a[i])
+			case i < len(b):
+				out += fmt.Sprintf("%d:       %s", i, b[i])
+			default:
+				out += "Error!!!!"
+			}
+			out += "\n"
+		}
+		return out
+	}
+
+	if !reflect.DeepEqual(sent1, rcvd2) {
+		t.Errorf("Sent by ws1 != received by ws2. Sent/received:\n%s",
+			sliceDiff(*sent1, *rcvd2))
+	}
+
+	if !reflect.DeepEqual(sent2, rcvd1) {
+		t.Errorf("Sent by ws2 != received by ws1. Sent/received:\n%s",
+			sliceDiff(*sent2, *rcvd1))
+	}
+
+	tLog.Debug("Waiting on group")
 	WG.Wait()
 }

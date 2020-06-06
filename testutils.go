@@ -41,8 +41,8 @@ var tLog = Log.New("test", true)
 
 func init() {
 	// Decide if we want to output debug logging
-	tLog.SetHandler(log15.DiscardHandler())
-	// tLog.SetHandler(log15.StdoutHandler)
+	// tLog.SetHandler(log15.DiscardHandler())
+	tLog.SetHandler(log15.StdoutHandler)
 }
 
 // sameElements tests if two string slices have the same elements
@@ -281,4 +281,12 @@ func (ws *tConn) expectNoMessage(timeout int) error {
 		return fmt.Errorf("Got non-timeout error: %s", rr.err.Error())
 	}
 	return fmt.Errorf("Wrongly got message '%s'", string(rr.msg))
+}
+
+// Compute the max length of two slices
+func maxLength(a []string, b []string) int {
+	if len(a) > len(b) {
+		return len(a)
+	}
+	return len(b)
 }
