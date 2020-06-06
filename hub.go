@@ -57,7 +57,7 @@ func NewHub() *Hub {
 
 // Start starts goroutines running that process the messages.
 func (h *Hub) Start() {
-	tLog.Debug("hub.Start, adding for receiveInt")
+	aLog.Debug("hub.Start, adding for receiveInt")
 	WG.Add(1)
 	go h.receiveInt()
 }
@@ -65,20 +65,20 @@ func (h *Hub) Start() {
 // receiveInt is a goroutine that listens for pending messages, and sends
 // them out to the relevant clients.
 func (h *Hub) receiveInt() {
-	defer tLog.Debug("hub.receiveInt, goroutine done")
+	defer aLog.Debug("hub.receiveInt, goroutine done")
 	defer WG.Done()
-	tLog.Debug("hub.receiveInt, entering")
+	aLog.Debug("hub.receiveInt, entering")
 
 	for !h.detachedAck {
-		tLog.Debug("hub.receiveInt, selecting")
+		aLog.Debug("hub.receiveInt, selecting")
 
 		select {
 		case <-h.Detached:
-			tLog.Debug("hub.receiveInt, received detached flag")
+			aLog.Debug("hub.receiveInt, received detached flag")
 			h.detachedAck = true
 
 		case msg := <-h.Pending:
-			tLog.Debug("hub.receiveInt, received pending message")
+			aLog.Debug("hub.receiveInt, received pending message")
 
 			switch {
 			case !h.clients[msg.From]:
@@ -86,7 +86,7 @@ func (h *Hub) receiveInt() {
 				c := msg.From
 
 				// Send welcome message to joiner
-				tLog.Debug("hub.receiveInt, sending welcome message",
+				aLog.Debug("hub.receiveInt, sending welcome message",
 					"fromcid", c.ID)
 				c.Pending <- &Message{
 					From:  c,
@@ -111,14 +111,14 @@ func (h *Hub) receiveInt() {
 					},
 				}
 
-				tLog.Debug("hub.receiveInt, sending joiner messages",
+				aLog.Debug("hub.receiveInt, sending joiner messages",
 					"fromcid", c.ID)
 				for cl, _ := range h.clients {
-					tLog.Debug("hub.receiveInt, sending msg",
+					aLog.Debug("hub.receiveInt, sending msg",
 						"fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				tLog.Debug("hub.receiveInt, sent joiner messages",
+				aLog.Debug("hub.receiveInt, sent joiner messages",
 					"fromcid", c.ID)
 
 				// Add the client to our list
@@ -127,11 +127,11 @@ func (h *Hub) receiveInt() {
 			case msg.Env != nil && msg.Env.Intent == "Leaver":
 				// We have a leaver
 				c := msg.From
-				tLog.Debug("hub.receiveInt, got a leaver", "fromcid", c.ID)
+				aLog.Debug("hub.receiveInt, got a leaver", "fromcid", c.ID)
 
 				// Tell the client it will receive no more messages and
 				// forget about it
-				tLog.Debug("hub.receiveInt, closing cl channel", "fromcid", c.ID)
+				aLog.Debug("hub.receiveInt, closing cl channel", "fromcid", c.ID)
 				close(c.Pending)
 				delete(h.clients, c)
 
@@ -146,18 +146,18 @@ func (h *Hub) receiveInt() {
 						Intent: "Leaver",
 					},
 				}
-				tLog.Debug("hub.receiveInt, sending leaver messages")
+				aLog.Debug("hub.receiveInt, sending leaver messages")
 				for cl, _ := range h.clients {
-					tLog.Debug("hub.receiveInt, sending leaver msg",
+					aLog.Debug("hub.receiveInt, sending leaver msg",
 						"fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				tLog.Debug("hub.receiveInt, sent leaver messages")
+				aLog.Debug("hub.receiveInt, sent leaver messages")
 
 			case msg.Env != nil && msg.Env.Body != nil:
 				// We have a peer message
 				c := msg.From
-				tLog.Debug("hub.receiveInt, got peer msg", "fromcid", c.ID)
+				aLog.Debug("hub.receiveInt, got peer msg", "fromcid", c.ID)
 
 				toCls := h.exclude(c)
 				msg.Env.From = []string{c.ID}
@@ -165,13 +165,13 @@ func (h *Hub) receiveInt() {
 				msg.Env.Time = time.Now().Unix()
 				msg.Env.Intent = "Peer"
 
-				tLog.Debug("hub.receiveInt, sending peer messages")
+				aLog.Debug("hub.receiveInt, sending peer messages")
 				for _, cl := range toCls {
-					tLog.Debug("hub.receiveInt, sending peer msg",
+					aLog.Debug("hub.receiveInt, sending peer msg",
 						"fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				tLog.Debug("hub.receiveInt, sent peer messages")
+				aLog.Debug("hub.receiveInt, sent peer messages")
 
 			default:
 				// Should never get here
@@ -185,14 +185,14 @@ func (h *Hub) receiveInt() {
 // exclude finds all clients which aren't the given one.
 // Matching is done on pointers.
 func (h *Hub) exclude(cx *Client) []*Client {
-	tLog.Debug("hub.exclude, entering")
+	aLog.Debug("hub.exclude, entering")
 	cOut := make([]*Client, 0)
 	for c, _ := range h.clients {
 		if c != cx {
 			cOut = append(cOut, c)
 		}
 	}
-	tLog.Debug("hub.exclude, exiting")
+	aLog.Debug("hub.exclude, exiting")
 	return cOut
 }
 

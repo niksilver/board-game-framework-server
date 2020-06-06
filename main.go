@@ -22,9 +22,13 @@ var Shub = NewSuperhub()
 // but useful to wait on when debuggging.
 var WG = sync.WaitGroup{}
 
+// A logger for application-side logging
+var aLog = Log.New("side", "app")
+
 func init() {
 	// Output application logs
-	// log.SetLvlDebugStdout()
+	// SetLvlDebugStdout()
+	// Log.SetHandler(log15.StdoutHandler)
 }
 
 func main() {

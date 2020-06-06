@@ -11,7 +11,8 @@ import (
 	"github.com/inconshreveable/log15"
 )
 
-// Log is the logger, which discards everything by default
+// Log is the logger.
+// By default it logs application-side code, and discards everything
 var Log = log15.New()
 
 func init() {

@@ -37,7 +37,7 @@ type readRes struct {
 //
 // Use it like this:
 //     tLog.Info("This is my message", "key", value,...)
-var tLog = Log.New("test", true)
+var tLog = Log.New("side", "test")
 
 func init() {
 	// Decide if we want to output debug logging

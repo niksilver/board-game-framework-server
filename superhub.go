@@ -36,26 +36,26 @@ func NewSuperhub() *Superhub {
 func (sh *Superhub) Hub(name string) (*Hub, error) {
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
-	tLog.Debug("superhub.Hub, giving hub", "name", name)
+	aLog.Debug("superhub.Hub, giving hub", "name", name)
 
 	if h, okay := sh.hubs[name]; okay {
 		if sh.counts[h] >= MaxClients {
 			return nil, fmt.Errorf("Maximum number of clients in game")
 		}
 		sh.counts[h]++
-		tLog.Debug("superhub.Hub, existing hub",
+		aLog.Debug("superhub.Hub, existing hub",
 			"name", name, "count", sh.counts[h])
 		return h, nil
 	}
 
-	tLog.Debug("superhub.Hub, new hub", "name", name)
+	aLog.Debug("superhub.Hub, new hub", "name", name)
 	h := NewHub()
 	sh.hubs[name] = h
 	sh.counts[h] = 1
 	sh.names[h] = name
-	tLog.Debug("superhub.Hub, starting hub", "name", name)
+	aLog.Debug("superhub.Hub, starting hub", "name", name)
 	h.Start()
-	tLog.Debug("superhub.Hub, exiting", "name", name)
+	aLog.Debug("superhub.Hub, exiting", "name", name)
 
 	return h, nil
 }
@@ -66,18 +66,18 @@ func (sh *Superhub) Hub(name string) (*Hub, error) {
 func (sh *Superhub) Release(h *Hub) {
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
-	tLog.Debug("superhub.Release, releasing hub", "name", sh.names[h])
+	aLog.Debug("superhub.Release, releasing hub", "name", sh.names[h])
 
 	sh.counts[h]--
 	if sh.counts[h] == 0 {
-		tLog.Debug("superhub.Release, deleting hub", "name", sh.names[h])
+		aLog.Debug("superhub.Release, deleting hub", "name", sh.names[h])
 		delete(sh.hubs, sh.names[h])
 		delete(sh.names, h)
-		tLog.Debug("superhub.Release, sending detached flag", "name", sh.names[h])
+		aLog.Debug("superhub.Release, sending detached flag", "name", sh.names[h])
 		h.Detached <- true
-		tLog.Debug("superhub.Release, sent detached flag", "name", sh.names[h])
+		aLog.Debug("superhub.Release, sent detached flag", "name", sh.names[h])
 	}
-	tLog.Debug("superhub.Release, exiting",
+	aLog.Debug("superhub.Release, exiting",
 		"name", sh.names[h], "count", sh.counts[h])
 }
 
@@ -87,7 +87,7 @@ func (sh *Superhub) Count() int {
 	defer sh.mux.RUnlock()
 
 	for _, name := range sh.names {
-		tLog.Debug("superhub.count, counting", "name", name)
+		aLog.Debug("superhub.count, counting", "name", name)
 	}
 	return len(sh.names)
 }

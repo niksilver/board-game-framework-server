@@ -123,7 +123,7 @@ func ClientIDMaxAge(cookies []*http.Cookie) int {
 func (c *Client) Start() {
 	// Create a client-specific logger
 	if c.log == nil {
-		c.log = Log.New("ID", c.ID)
+		c.log = aLog.New("ID", c.ID)
 	}
 
 	// Immediate termination for an excessive message
@@ -133,25 +133,25 @@ func (c *Client) Start() {
 	c.pinger = time.NewTicker(pingFreq)
 	c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.WS.SetPongHandler(func(string) error {
-		tLog.Debug("Start.SetPongHandler: Received pong", "id", c.ID)
+		aLog.Debug("Start.SetPongHandler: Received pong", "id", c.ID)
 		c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 
 	// Start sending messages externally
-	tLog.Debug("client.start, adding for sendExt", "id", c.ID)
+	aLog.Debug("client.start, adding for sendExt", "id", c.ID)
 	WG.Add(1)
 	go c.sendExt()
 
 	// Start receiving messages from the outside
-	tLog.Debug("client.start, adding for receiveExt", "id", c.ID)
+	aLog.Debug("client.start, adding for receiveExt", "id", c.ID)
 	WG.Add(1)
 	go c.receiveExt()
 }
 
 // receiveExt is a goroutine that acts on external messages coming in.
 func (c *Client) receiveExt() {
-	defer tLog.Debug("client.receiveExt, goroutine done", "id", c.ID)
+	defer aLog.Debug("client.receiveExt, goroutine done", "id", c.ID)
 	defer WG.Done()
 
 	// First send a joiner message
@@ -161,16 +161,16 @@ func (c *Client) receiveExt() {
 
 	// Read messages until we can no more
 	for {
-		tLog.Debug("client.receiveExt, reading", "id", c.ID)
+		aLog.Debug("client.receiveExt, reading", "id", c.ID)
 		mType, msg, err := c.WS.ReadMessage()
 		if err != nil {
-			tLog.Debug(
+			aLog.Debug(
 				"client.receiveExt, read error", "error", err, "id", c.ID,
 			)
 			break
 		}
 		// Currently just passes on the message type
-		tLog.Debug("client.receiveExt, read is good", "id", c.ID)
+		aLog.Debug("client.receiveExt, read is good", "id", c.ID)
 		c.Hub.Pending <- &Message{
 			From:  c,
 			MType: mType,
@@ -179,7 +179,7 @@ func (c *Client) receiveExt() {
 	}
 
 	// We've done reading, so shut down and send a leaver message
-	tLog.Debug("client.receiveExt, closing conn", "id", c.ID)
+	aLog.Debug("client.receiveExt, closing conn", "id", c.ID)
 	c.WS.Close()
 	c.Hub.Pending <- &Message{
 		From: c,
@@ -193,44 +193,44 @@ func (c *Client) receiveExt() {
 // pings and messages that have come from the hub. It will stop
 // if its channel is closed or it can no longer write to the network.
 func (c *Client) sendExt() {
-	defer tLog.Debug("client.sendExt, goroutine done", "id", c.ID)
+	defer aLog.Debug("client.sendExt, goroutine done", "id", c.ID)
 	defer WG.Done()
 
 	// Keep receiving internal messages
 sendLoop:
 	for {
-		tLog.Debug("client.sendExt, entering select", "id", c.ID)
+		aLog.Debug("client.sendExt, entering select", "id", c.ID)
 		select {
 		case m, ok := <-c.Pending:
-			tLog.Debug("client.sendExt, got pending", "id", c.ID)
+			aLog.Debug("client.sendExt, got pending", "id", c.ID)
 			if !ok {
 				// Channel closed, we need to shut down
-				tLog.Debug("client.sendExt, channel not okay", "id", c.ID)
+				aLog.Debug("client.sendExt, channel not okay", "id", c.ID)
 				break sendLoop
 			}
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, shut down
-				tLog.Debug("client.sendExt, deadline1 error", "id", c.ID, "err", err)
+				aLog.Debug("client.sendExt, deadline1 error", "id", c.ID, "err", err)
 				break sendLoop
 			}
 			if err := c.WS.WriteJSON(m.Env); err != nil {
 				// Write error, shut down
-				tLog.Debug("client.sendExt, write1 error", "id", c.ID, "err", err)
+				aLog.Debug("client.sendExt, write1 error", "id", c.ID, "err", err)
 				break sendLoop
 			}
 		case <-c.pinger.C:
-			tLog.Debug("client.sendExt, sending ping", "id", c.ID)
+			aLog.Debug("client.sendExt, sending ping", "id", c.ID)
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, shut down
-				tLog.Debug("client.sendExt, deadline2 error", "id", c.ID, "err", err)
+				aLog.Debug("client.sendExt, deadline2 error", "id", c.ID, "err", err)
 				break sendLoop
 			}
 			if err := c.WS.WriteMessage(
 				websocket.PingMessage, nil); err != nil {
 				// Ping write error, shut down
-				tLog.Debug("client.sendExt, write2 error", "id", c.ID, "err", err)
+				aLog.Debug("client.sendExt, write2 error", "id", c.ID, "err", err)
 				break sendLoop
 			}
 		}
@@ -239,10 +239,10 @@ sendLoop:
 	// We are here due to either the channel being closed or the
 	// network connection being closed. We need to make sure both are
 	// true before continuing the shut down.
-	tLog.Debug("client.sendExt, closing conn", "id", c.ID)
+	aLog.Debug("client.sendExt, closing conn", "id", c.ID)
 	c.WS.Close()
 	c.pinger.Stop()
-	tLog.Debug("client.sendExt, waiting for channel close", "id", c.ID)
+	aLog.Debug("client.sendExt, waiting for channel close", "id", c.ID)
 	for {
 		if _, ok := <-c.Pending; !ok {
 			break
@@ -250,6 +250,6 @@ sendLoop:
 	}
 
 	// We're done. Tell the superhub we're done with the hub
-	tLog.Debug("client.sendExt, releasing hub", "id", c.ID)
+	aLog.Debug("client.sendExt, releasing hub", "id", c.ID)
 	Shub.Release(c.Hub)
 }
