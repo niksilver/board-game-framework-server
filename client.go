@@ -34,6 +34,8 @@ func init() {
 
 type Client struct {
 	ID string
+	// For tracing purposes only
+	Ref string
 	// Don't close the websocket directly. That's managed internally.
 	WS  *websocket.Conn
 	Hub *Hub
@@ -128,6 +130,8 @@ func ClientIDMaxAge(cookies []*http.Cookie) int {
 
 // Start attaches the client to its hub and starts its goroutines.
 func (c *Client) Start() {
+	fLog := aLog.New("fn", "client.Start", "id", c.ID, "c", c.Ref)
+
 	// Immediate termination for an excessive message
 	c.WS.SetReadLimit(60 * 1024)
 
@@ -135,25 +139,26 @@ func (c *Client) Start() {
 	c.pinger = time.NewTicker(pingFreq)
 	c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 	c.WS.SetPongHandler(func(string) error {
-		aLog.Debug("Start.SetPongHandler: Received pong", "id", c.ID)
+		fLog.Debug("Start.SetPongHandler: Received pong")
 		c.WS.SetReadDeadline(time.Now().Add(pongTimeout))
 		return nil
 	})
 
 	// Start sending messages externally
-	aLog.Debug("client.start, adding for sendExt", "id", c.ID)
+	fLog.Debug("client.start, adding for sendExt")
 	WG.Add(1)
 	go c.sendExt()
 
 	// Start receiving messages from the outside
-	aLog.Debug("client.start, adding for receiveExt", "id", c.ID)
+	fLog.Debug("client.start, adding for receiveExt")
 	WG.Add(1)
 	go c.receiveExt()
 }
 
 // receiveExt is a goroutine that acts on external messages coming in.
 func (c *Client) receiveExt() {
-	fLog := aLog.New("fn", "client.receiveExt", "id", c.ID)
+	fLog := aLog.New("fn", "client.receiveExt", "id", c.ID, "c", c.Ref)
+	fLog.Debug("Entering")
 
 	defer fLog.Debug("Done")
 	defer WG.Done()
@@ -208,7 +213,8 @@ func (c *Client) receiveExt() {
 // pings and messages that have come from the hub. It will stop
 // if its channel is closed or it can no longer write to the network.
 func (c *Client) sendExt() {
-	fLog := aLog.New("fn", "client.sendExt", "id", c.ID)
+	fLog := aLog.New("fn", "client.sendExt", "id", c.ID, "c", c.Ref)
+	fLog.Debug("Entering")
 
 	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
@@ -253,7 +259,7 @@ scenarios:
 // connectedQueueEmpty is for processing messages from the hub when
 // the queue is empty. Returns connected flag and exit flag.
 func (c *Client) connectedQueueEmpty() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedQueueEmpty", "id", c.ID)
+	fLog := aLog.New("fn", "client.connectedQueueEmpty", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -310,7 +316,7 @@ func (c *Client) connectedQueueEmpty() (bool, bool) {
 // connectedQueueNotEmpty is for processing messages from the hub while
 // sending messages from the queue. Returns connected flag and exit flag.
 func (c *Client) connectedQueueNotEmpty() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedQueueNotEmpty", "id", c.ID)
+	fLog := aLog.New("fn", "client.connectedQueueNotEmpty", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -381,7 +387,7 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 // that we'll get a reconnection in time. Returns when the pending
 // channel closes.
 func (c *Client) disconnected() {
-	fLog := aLog.New("fn", "client.disconnected", "id", c.ID)
+	fLog := aLog.New("fn", "client.disconnected", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -397,7 +403,7 @@ func (c *Client) disconnected() {
 			if m.Env.Intent == "LostConnection" {
 				// This message is for us
 				fLog.Debug("Got LostConnection while disconnected")
-				panic("Got LostConnection while disconnected")
+				continue
 			}
 			// Message needs to go onto the end of the queue
 			c.qMux.Lock()

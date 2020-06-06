@@ -28,7 +28,7 @@ var aLog = Log.New("side", "app")
 func init() {
 	// Output application logs
 	// SetLvlDebugStdout()
-	Log.SetHandler(log15.StdoutHandler)
+	aLog.SetHandler(log15.StdoutHandler)
 }
 
 func main() {
@@ -86,7 +86,9 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		WS:      ws,
 		Hub:     hub,
 		Pending: make(chan *Message),
+		QueueC:  make(chan []*Message),
 	}
+	c.Ref = fmt.Sprintf("%p", c)
 	c.Start()
 	Log.Info("Connected client", "id", clientID)
 }

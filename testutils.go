@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	//"github.com/inconshreveable/log15"
+	"github.com/inconshreveable/log15"
 )
 
 // tConn is a websocket.Conn whose ReadMessage can time out safely
@@ -42,7 +42,7 @@ var tLog = Log.New("side", "test")
 func init() {
 	// Decide if we want to output debug logging
 	// tLog.SetHandler(log15.DiscardHandler())
-	// tLog.SetHandler(log15.StdoutHandler)
+	tLog.SetHandler(log15.StdoutHandler)
 }
 
 // sameElements tests if two string slices have the same elements
