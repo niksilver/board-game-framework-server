@@ -184,7 +184,10 @@ func (c *Client) receiveExt() {
 		c.Hub.Pending <- &Message{
 			From:  c,
 			MType: mType,
-			Env:   &Envelope{Body: msg},
+			Env: &Envelope{
+				Intent: "Peer",
+				Body:   msg,
+			},
 		}
 	}
 

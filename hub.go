@@ -83,12 +83,12 @@ func (h *Hub) receiveInt() {
 			fLog.Debug("Received pending message")
 
 			switch {
-			case !h.clients[msg.From] && h.other(msg.From) == nil:
+			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
 
 				// Send welcome message to joiner
-				fLog.Debug("Sending welcome message", "fromcid", c.ID)
+				fLog.Debug("Sending welcome message", "fromcid", c.ID, "fromcref", c.Ref)
 				c.Pending <- &Message{
 					From:  c,
 					MType: websocket.BinaryMessage,
@@ -112,49 +112,50 @@ func (h *Hub) receiveInt() {
 					},
 				}
 
-				fLog.Debug("Sending joiner messages", "fromcid", c.ID)
+				fLog.Debug("Sending joiner messages", "fromcid", c.ID, "fromcref", c.Ref)
 				for cl, _ := range h.clients {
-					fLog.Debug("Sending msg", "fromcid", c.ID, "tocid", cl.ID)
+					fLog.Debug("Sending msg", "fromcid", c.ID, "tocid", cl.ID, "fromcref", c.Ref)
 					cl.Pending <- msg
 				}
-				fLog.Debug("Sent joiner messages", "fromcid", c.ID)
+				fLog.Debug("Sent joiner messages", "fromcid", c.ID, "fromcref", c.Ref)
 
 				// Add the client to our list
 				h.clients[c] = true
 
-			case !h.clients[msg.From]:
+			case msg.Env.Intent == "Joiner":
 				// A reconnection; new client with an old ID
 				c := msg.From
-				fLog.Debug("Got reconnection", "fromcid", c.ID)
 				cOld := h.other(c)
-				fLog.Debug("For reconnection, sending queue", "fromcid", c.ID)
+				f2Log := fLog.New("fromcid", c.ID, "fromcref", c.Ref,
+					"oldcid", cOld.ID, "oldcref", cOld.Ref)
+				f2Log.Debug("Got reconnection")
 				c.QueueC <- cOld.getQueue()
+				f2Log.Debug("Closing old given reconnection")
 				close(cOld.Pending)
 				delete(h.clients, cOld)
-				fLog.Debug("Got reconnection, closed old", "fromcid", c.ID)
 
 			case msg.Env != nil && msg.Env.Intent == "LostConnection":
 				// A client receiver has lost the connection
 				c := msg.From
-				fLog.Debug("Got lost connection", "fromcid", c.ID)
+				fLog.Debug("Got lost connection", "fromcid", c.ID, "fromcref", c.Ref)
 				c.Pending <- msg
-				fLog.Debug("Sent lost connection message", "fromcid", c.ID)
+				fLog.Debug("Sent lost connection message", "fromcid", c.ID, "fromcref", c.Ref)
 
 			case msg.Env != nil && msg.Env.Intent == "ReconnectionTimeout":
 				// There was no reconnection for a client
 				c := msg.From
-				fLog.Debug("Reconnection timed out", "fromcid", c.ID)
+				fLog.Debug("Reconnection timed out", "fromcid", c.ID, "fromcref", c.Ref)
 				if !h.clients[c] {
-					fLog.Debug("Timed-out client gone", "fromcid", c.ID)
+					fLog.Debug("Timed-out client gone", "fromcid", c.ID, "fromcref", c.Ref)
 					continue
 				}
 
 				// We have a leaver
-				fLog.Debug("Got a leaver", "fromcid", c.ID)
+				fLog.Debug("Got a leaver", "fromcid", c.ID, "fromcref", c.Ref)
 
 				// Tell the client it will receive no more messages and
 				// forget about it
-				fLog.Debug("Closing cl channel", "fromcid", c.ID)
+				fLog.Debug("Closing cl channel", "fromcid", c.ID, "fromcref", c.Ref)
 				close(c.Pending)
 				delete(h.clients, c)
 
@@ -180,7 +181,7 @@ func (h *Hub) receiveInt() {
 			case msg.Env != nil && msg.Env.Body != nil:
 				// We have a peer message
 				c := msg.From
-				fLog.Debug("Got peer msg", "fromcid", c.ID)
+				fLog.Debug("Got peer msg", "fromcid", c.ID, "fromcref", c.Ref)
 
 				toCls := h.exclude(c)
 				msg.Env.From = []string{c.ID}
