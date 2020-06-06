@@ -28,7 +28,7 @@ var aLog = Log.New("side", "app")
 func init() {
 	// Output application logs
 	// SetLvlDebugStdout()
-	// Log.SetHandler(log15.StdoutHandler)
+	Log.SetHandler(log15.StdoutHandler)
 }
 
 func main() {

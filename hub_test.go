@@ -1081,6 +1081,6 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			sliceDiff(*sent2, *rcvd1))
 	}
 
-	tLog.Debug("Waiting on group")
+	fLog.Debug("Waiting on group")
 	WG.Wait()
 }

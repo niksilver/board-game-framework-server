@@ -65,29 +65,30 @@ func (h *Hub) Start() {
 // receiveInt is a goroutine that listens for pending messages, and sends
 // them out to the relevant clients.
 func (h *Hub) receiveInt() {
-	defer aLog.Debug("hub.receiveInt, goroutine done")
+	fLog := aLog.New("fn", "hub.receiveInt")
+
+	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
-	aLog.Debug("hub.receiveInt, entering")
+	fLog.Debug("Entering")
 
 	for !h.detachedAck {
-		aLog.Debug("hub.receiveInt, selecting")
+		fLog.Debug("Selecting")
 
 		select {
 		case <-h.Detached:
-			aLog.Debug("hub.receiveInt, received detached flag")
+			fLog.Debug("Received detached flag")
 			h.detachedAck = true
 
 		case msg := <-h.Pending:
-			aLog.Debug("hub.receiveInt, received pending message")
+			fLog.Debug("Received pending message")
 
 			switch {
-			case !h.clients[msg.From]:
+			case !h.clients[msg.From] && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
 
 				// Send welcome message to joiner
-				aLog.Debug("hub.receiveInt, sending welcome message",
-					"fromcid", c.ID)
+				fLog.Debug("Sending welcome message", "fromcid", c.ID)
 				c.Pending <- &Message{
 					From:  c,
 					MType: websocket.BinaryMessage,
@@ -111,27 +112,49 @@ func (h *Hub) receiveInt() {
 					},
 				}
 
-				aLog.Debug("hub.receiveInt, sending joiner messages",
-					"fromcid", c.ID)
+				fLog.Debug("Sending joiner messages", "fromcid", c.ID)
 				for cl, _ := range h.clients {
-					aLog.Debug("hub.receiveInt, sending msg",
-						"fromcid", c.ID, "tocid", cl.ID)
+					fLog.Debug("Sending msg", "fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				aLog.Debug("hub.receiveInt, sent joiner messages",
-					"fromcid", c.ID)
+				fLog.Debug("Sent joiner messages", "fromcid", c.ID)
 
 				// Add the client to our list
 				h.clients[c] = true
 
-			case msg.Env != nil && msg.Env.Intent == "Leaver":
-				// We have a leaver
+			case !h.clients[msg.From]:
+				// A reconnection; new client with an old ID
 				c := msg.From
-				aLog.Debug("hub.receiveInt, got a leaver", "fromcid", c.ID)
+				fLog.Debug("Got reconnection", "fromcid", c.ID)
+				cOld := h.other(c)
+				fLog.Debug("For reconnection, sending queue", "fromcid", c.ID)
+				c.QueueC <- cOld.getQueue()
+				close(cOld.Pending)
+				delete(h.clients, cOld)
+				fLog.Debug("Got reconnection, closed old", "fromcid", c.ID)
+
+			case msg.Env != nil && msg.Env.Intent == "LostConnection":
+				// A client receiver has lost the connection
+				c := msg.From
+				fLog.Debug("Got lost connection", "fromcid", c.ID)
+				c.Pending <- msg
+				fLog.Debug("Sent lost connection message", "fromcid", c.ID)
+
+			case msg.Env != nil && msg.Env.Intent == "ReconnectionTimeout":
+				// There was no reconnection for a client
+				c := msg.From
+				fLog.Debug("Reconnection timed out", "fromcid", c.ID)
+				if !h.clients[c] {
+					fLog.Debug("Timed-out client gone", "fromcid", c.ID)
+					continue
+				}
+
+				// We have a leaver
+				fLog.Debug("Got a leaver", "fromcid", c.ID)
 
 				// Tell the client it will receive no more messages and
 				// forget about it
-				aLog.Debug("hub.receiveInt, closing cl channel", "fromcid", c.ID)
+				fLog.Debug("Closing cl channel", "fromcid", c.ID)
 				close(c.Pending)
 				delete(h.clients, c)
 
@@ -146,18 +169,18 @@ func (h *Hub) receiveInt() {
 						Intent: "Leaver",
 					},
 				}
-				aLog.Debug("hub.receiveInt, sending leaver messages")
+				fLog.Debug("Sending leaver messages")
 				for cl, _ := range h.clients {
-					aLog.Debug("hub.receiveInt, sending leaver msg",
+					fLog.Debug("Sending leaver msg",
 						"fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				aLog.Debug("hub.receiveInt, sent leaver messages")
+				fLog.Debug("Sent leaver messages")
 
 			case msg.Env != nil && msg.Env.Body != nil:
 				// We have a peer message
 				c := msg.From
-				aLog.Debug("hub.receiveInt, got peer msg", "fromcid", c.ID)
+				fLog.Debug("Got peer msg", "fromcid", c.ID)
 
 				toCls := h.exclude(c)
 				msg.Env.From = []string{c.ID}
@@ -165,13 +188,13 @@ func (h *Hub) receiveInt() {
 				msg.Env.Time = time.Now().Unix()
 				msg.Env.Intent = "Peer"
 
-				aLog.Debug("hub.receiveInt, sending peer messages")
+				fLog.Debug("Sending peer messages")
 				for _, cl := range toCls {
-					aLog.Debug("hub.receiveInt, sending peer msg",
+					fLog.Debug("Sending peer msg",
 						"fromcid", c.ID, "tocid", cl.ID)
 					cl.Pending <- msg
 				}
-				aLog.Debug("hub.receiveInt, sent peer messages")
+				fLog.Debug("Sent peer messages")
 
 			default:
 				// Should never get here
@@ -212,4 +235,19 @@ func ids(cs []*Client) []string {
 		out[i] = c.ID
 	}
 	return out
+}
+
+// other returns the other client with the same ID, or nil
+func (h *Hub) other(c *Client) *Client {
+	var cOther *Client
+	for k := range h.clients {
+		if k.ID != c.ID {
+			continue
+		}
+		if cOther != nil {
+			panic("Found a second client with the same ID: " + c.ID)
+		}
+		cOther = k
+	}
+	return cOther
 }

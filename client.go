@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/inconshreveable/log15"
 )
 
 // How often we send pings
@@ -23,6 +23,9 @@ var pongTimeout = (pingFreq * 5) / 4
 
 // How long to allow to write to the websocket.
 var writeTimeout = 10 * time.Second
+
+// How long to allow for a reconnection if we lose the client
+var reconnectionTimeout = 3 * time.Second
 
 func init() {
 	// Let's not generate near-identical client IDs on every restart
@@ -37,7 +40,11 @@ type Client struct {
 	// To receive internal message from the hub. The hub will close it
 	// once it knows the client wants to stop.
 	Pending chan *Message
-	log     log15.Logger
+	// To receive a queue of messages when picking up from a
+	// disconnected client with the same ID.
+	QueueC chan []*Message
+	queue  []*Message
+	qMux   sync.Mutex
 	// pinger ticks for pinging
 	pinger *time.Ticker
 }
@@ -121,11 +128,6 @@ func ClientIDMaxAge(cookies []*http.Cookie) int {
 
 // Start attaches the client to its hub and starts its goroutines.
 func (c *Client) Start() {
-	// Create a client-specific logger
-	if c.log == nil {
-		c.log = aLog.New("ID", c.ID)
-	}
-
 	// Immediate termination for an excessive message
 	c.WS.SetReadLimit(60 * 1024)
 
@@ -151,26 +153,29 @@ func (c *Client) Start() {
 
 // receiveExt is a goroutine that acts on external messages coming in.
 func (c *Client) receiveExt() {
-	defer aLog.Debug("client.receiveExt, goroutine done", "id", c.ID)
+	fLog := aLog.New("fn", "client.receiveExt", "id", c.ID)
+
+	defer fLog.Debug("Done")
 	defer WG.Done()
 
 	// First send a joiner message
 	c.Hub.Pending <- &Message{
 		From: c,
+		Env: &Envelope{
+			Intent: "Joiner",
+		},
 	}
 
 	// Read messages until we can no more
 	for {
-		aLog.Debug("client.receiveExt, reading", "id", c.ID)
+		fLog.Debug("Reading")
 		mType, msg, err := c.WS.ReadMessage()
 		if err != nil {
-			aLog.Debug(
-				"client.receiveExt, read error", "error", err, "id", c.ID,
-			)
+			fLog.Debug("Read error", "error", err)
 			break
 		}
 		// Currently just passes on the message type
-		aLog.Debug("client.receiveExt, read is good", "id", c.ID)
+		fLog.Debug("Read is good")
 		c.Hub.Pending <- &Message{
 			From:  c,
 			MType: mType,
@@ -178,13 +183,23 @@ func (c *Client) receiveExt() {
 		}
 	}
 
-	// We've done reading, so shut down and send a leaver message
-	aLog.Debug("client.receiveExt, closing conn", "id", c.ID)
+	// We've done reading, so announce a lost connection and set up a
+	// signal for allowing a reconnection.
+
+	fLog.Debug("Closing conn")
 	c.WS.Close()
 	c.Hub.Pending <- &Message{
 		From: c,
 		Env: &Envelope{
-			Intent: "Leaver",
+			Intent: "LostConnection",
+		},
+	}
+
+	time.Sleep(reconnectionTimeout)
+	c.Hub.Pending <- &Message{
+		From: c,
+		Env: &Envelope{
+			Intent: "ReconnectionTimeout",
 		},
 	}
 }
@@ -193,56 +208,37 @@ func (c *Client) receiveExt() {
 // pings and messages that have come from the hub. It will stop
 // if its channel is closed or it can no longer write to the network.
 func (c *Client) sendExt() {
-	defer aLog.Debug("client.sendExt, goroutine done", "id", c.ID)
+	fLog := aLog.New("fn", "client.sendExt", "id", c.ID)
+
+	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
 
-	// Keep receiving internal messages
-sendLoop:
-	for {
-		aLog.Debug("client.sendExt, entering select", "id", c.ID)
-		select {
-		case m, ok := <-c.Pending:
-			aLog.Debug("client.sendExt, got pending", "id", c.ID)
-			if !ok {
-				// Channel closed, we need to shut down
-				aLog.Debug("client.sendExt, channel not okay", "id", c.ID)
-				break sendLoop
-			}
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, shut down
-				aLog.Debug("client.sendExt, deadline1 error", "id", c.ID, "err", err)
-				break sendLoop
-			}
-			if err := c.WS.WriteJSON(m.Env); err != nil {
-				// Write error, shut down
-				aLog.Debug("client.sendExt, write1 error", "id", c.ID, "err", err)
-				break sendLoop
-			}
-		case <-c.pinger.C:
-			aLog.Debug("client.sendExt, sending ping", "id", c.ID)
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, shut down
-				aLog.Debug("client.sendExt, deadline2 error", "id", c.ID, "err", err)
-				break sendLoop
-			}
-			if err := c.WS.WriteMessage(
-				websocket.PingMessage, nil); err != nil {
-				// Ping write error, shut down
-				aLog.Debug("client.sendExt, write2 error", "id", c.ID, "err", err)
-				break sendLoop
-			}
+	// Keep reselecting scenarios until we need to exit
+	connected := true
+	exit := false
+scenarios:
+	for !exit {
+		switch {
+		case connected && c.queueEmpty():
+			fLog.Debug("Scenario: connected, queue empty")
+			connected, exit = c.connectedQueueEmpty()
+		case connected && !c.queueEmpty():
+			fLog.Debug("Scenario: connected, queue not empty")
+			connected, exit = c.connectedQueueNotEmpty()
+		case !connected:
+			fLog.Debug("Scenario: disconnected")
+			c.disconnected()
+			break scenarios
 		}
 	}
 
 	// We are here due to either the channel being closed or the
 	// network connection being closed. We need to make sure both are
 	// true before continuing the shut down.
-	aLog.Debug("client.sendExt, closing conn", "id", c.ID)
+	fLog.Debug("Closing conn")
 	c.WS.Close()
 	c.pinger.Stop()
-	aLog.Debug("client.sendExt, waiting for channel close", "id", c.ID)
+	fLog.Debug("Waiting for channel close")
 	for {
 		if _, ok := <-c.Pending; !ok {
 			break
@@ -250,6 +246,184 @@ sendLoop:
 	}
 
 	// We're done. Tell the superhub we're done with the hub
-	aLog.Debug("client.sendExt, releasing hub", "id", c.ID)
+	fLog.Debug("Releasing hub")
 	Shub.Release(c.Hub)
+}
+
+// connectedQueueEmpty is for processing messages from the hub when
+// the queue is empty. Returns connected flag and exit flag.
+func (c *Client) connectedQueueEmpty() (bool, bool) {
+	fLog := aLog.New("fn", "client.connectedQueueEmpty", "id", c.ID)
+
+	// Keep receiving internal messages
+	for {
+		fLog.Debug("Entering select")
+		select {
+		case m, ok := <-c.Pending:
+			fLog.Debug("Got pending")
+			if !ok {
+				// Channel closed, we need to shut down
+				fLog.Debug("Channel closed")
+				return true, true
+			}
+			if m.Env.Intent == "LostConnection" {
+				fLog.Debug("Got LostConnection intent")
+				return false, false
+			}
+			// We should send this message
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline1 error", "err", err)
+				return false, false
+			}
+			if err := c.WS.WriteJSON(m.Env); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Write1 error", "err", err)
+				return false, false
+			}
+		case q := <-c.QueueC:
+			fLog.Debug("Got a queue")
+			c.qMux.Lock()
+			c.queue = q
+			c.qMux.Unlock()
+			fLog.Debug("Have queue, reselecting scenario")
+			return true, false
+		case <-c.pinger.C:
+			fLog.Debug("Sending ping")
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline2 error", "err", err)
+				return false, false
+			}
+			if err := c.WS.WriteMessage(
+				websocket.PingMessage, nil); err != nil {
+				// Ping write error, move to disconnected state
+				fLog.Debug("Write2 error", "err", err)
+				return false, false
+			}
+		}
+	}
+}
+
+// connectedQueueNotEmpty is for processing messages from the hub while
+// sending messages from the queue. Returns connected flag and exit flag.
+func (c *Client) connectedQueueNotEmpty() (bool, bool) {
+	fLog := aLog.New("fn", "client.connectedQueueNotEmpty", "id", c.ID)
+
+	// Keep receiving internal messages
+	for {
+		fLog.Debug("Entering select")
+		select {
+		case m, ok := <-c.Pending:
+			fLog.Debug("Got pending")
+			if !ok {
+				// Channel closed, we need to shut down
+				fLog.Debug("Channel closed")
+				return true, true
+			}
+			if m.Env.Intent == "LostConnection" {
+				// This message is for us
+				fLog.Debug("Got LostConnection intent")
+				return false, false
+			}
+			// Message needs to go onto the end of the queue
+			c.qMux.Lock()
+			c.queue = append(c.queue, m)
+			c.qMux.Unlock()
+		case <-c.QueueC:
+			fLog.Debug("Got a queue while processing queue")
+			panic("Should not have been sent a queue")
+		case <-c.pinger.C:
+			fLog.Debug("Sending ping")
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Ping deadline error", "err", err)
+				return false, false
+			}
+			if err := c.WS.WriteMessage(
+				websocket.PingMessage, nil); err != nil {
+				// Ping write error, move to disconnected state
+				fLog.Debug("Ping write error", "err", err)
+				return false, false
+			}
+		default:
+			fLog.Debug("Sending message at head of queue")
+			c.qMux.Lock()
+			m := c.queue[0]
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Message deadline error", "err", err)
+				c.qMux.Unlock()
+				return false, false
+			}
+			if err := c.WS.WriteJSON(m.Env); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Message write error", "err", err)
+				c.qMux.Unlock()
+				return false, false
+			}
+			// Send was okay
+			c.queue = c.queue[:len(c.queue)]
+			c.qMux.Unlock()
+			if len(c.queue) == 0 {
+				fLog.Debug("Queue now empty; reselecting scenario")
+				return true, false
+			}
+		}
+	}
+}
+
+// disconnected is for processing messages from the hub in the hope
+// that we'll get a reconnection in time. Returns when the pending
+// channel closes.
+func (c *Client) disconnected() {
+	fLog := aLog.New("fn", "client.disconnected", "id", c.ID)
+
+	// Keep receiving internal messages
+	for {
+		fLog.Debug("Entering select")
+		select {
+		case m, ok := <-c.Pending:
+			fLog.Debug("Got pending")
+			if !ok {
+				// Channel closed, we need to shut down
+				fLog.Debug("Channel closed")
+				return
+			}
+			if m.Env.Intent == "LostConnection" {
+				// This message is for us
+				fLog.Debug("Got LostConnection while disconnected")
+				panic("Got LostConnection while disconnected")
+			}
+			// Message needs to go onto the end of the queue
+			c.qMux.Lock()
+			c.queue = append(c.queue, m)
+			c.qMux.Unlock()
+		case <-c.QueueC:
+			fLog.Debug("Got a queue while disconnected")
+			panic("Got queue while disconnected")
+		case <-c.pinger.C:
+			fLog.Debug("Got a ping message; ignoring")
+		}
+	}
+}
+
+// getQueue will get a copy of the queue
+func (c *Client) getQueue() []*Message {
+	defer c.qMux.Unlock()
+	c.qMux.Lock()
+
+	qOut := make([]*Message, len(c.queue))
+	copy(qOut, c.queue)
+	return qOut
+}
+
+func (c *Client) queueEmpty() bool {
+	defer c.qMux.Unlock()
+	c.qMux.Lock()
+	return len(c.queue) == 0
 }
