@@ -180,7 +180,7 @@ func (c *Client) receiveExt() {
 			break
 		}
 		// Currently just passes on the message type
-		fLog.Debug("Read is good")
+		fLog.Debug("Read is good", "content", string(msg))
 		c.Hub.Pending <- &Message{
 			From:  c,
 			MType: mType,
@@ -284,13 +284,16 @@ func (c *Client) connectedQueueEmpty() (bool, bool) {
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Deadline1 error", "err", err)
+				c.enqueue(m)
 				return false, false
 			}
 			if err := c.WS.WriteJSON(m.Env); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Write1 error", "err", err)
+				c.enqueue(m)
 				return false, false
 			}
+			fLog.Debug("Wrote JSON", "content", string(m.Env.Body))
 		case q := <-c.QueueC:
 			fLog.Debug("Got a queue")
 			c.qMux.Lock()
@@ -338,9 +341,9 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 				return false, false
 			}
 			// Message needs to go onto the end of the queue
-			c.qMux.Lock()
-			c.queue = append(c.queue, m)
-			c.qMux.Unlock()
+			c.enqueue(m)
+			// DEBUG DEBUG DEBUG
+			fLog.Debug("Appended to queue", "content", string(m.Env.Body))
 		case <-c.QueueC:
 			fLog.Debug("Got a queue while processing queue")
 			panic("Should not have been sent a queue")
@@ -360,25 +363,22 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 			}
 		default:
 			fLog.Debug("Sending message at head of queue")
-			c.qMux.Lock()
-			m := c.queue[0]
+			m := c.peek()
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message deadline error", "err", err)
-				c.qMux.Unlock()
 				return false, false
 			}
 			if err := c.WS.WriteJSON(m.Env); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message write error", "err", err)
-				c.qMux.Unlock()
 				return false, false
 			}
 			// Send was okay
-			c.queue = c.queue[1:len(c.queue)]
-			c.qMux.Unlock()
-			if len(c.queue) == 0 {
+			fLog.Debug("Sent okay", "content", string(m.Env.Body))
+			c.remove()
+			if c.queueEmpty() {
 				fLog.Debug("Queue now empty; reselecting scenario")
 				return true, false
 			}
@@ -409,9 +409,9 @@ func (c *Client) disconnected() {
 				continue
 			}
 			// Message needs to go onto the end of the queue
-			c.qMux.Lock()
-			c.queue = append(c.queue, m)
-			c.qMux.Unlock()
+			c.enqueue(m)
+			// DEBUG DEBUG DEBUG
+			fLog.Debug("Appended to queue", "content", string(m.Env.Body))
 		case <-c.QueueC:
 			fLog.Debug("Got a queue while disconnected")
 			panic("Got queue while disconnected")
@@ -419,6 +419,27 @@ func (c *Client) disconnected() {
 			fLog.Debug("Got a ping message; ignoring")
 		}
 	}
+}
+
+// enqueue a message at the end of the queue
+func (c *Client) enqueue(m *Message) {
+	c.qMux.Lock()
+	c.queue = append(c.queue, m)
+	c.qMux.Unlock()
+}
+
+// peek at the message at the head of the queue. Panic if queue is empty.
+func (c *Client) peek() *Message {
+	defer c.qMux.Unlock()
+	c.qMux.Lock()
+	return c.queue[0]
+}
+
+// remove the message at the head of the queue. Panic if queue is empty.
+func (c *Client) remove() {
+	c.qMux.Lock()
+	c.queue = c.queue[1:len(c.queue)]
+	c.qMux.Unlock()
 }
 
 // getQueue will get a copy of the queue

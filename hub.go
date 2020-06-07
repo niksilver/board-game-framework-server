@@ -129,6 +129,9 @@ func (h *Hub) receiveInt() {
 				f2Log := fLog.New("fromcid", c.ID, "fromcref", c.Ref,
 					"oldcid", cOld.ID, "oldcref", cOld.Ref)
 				f2Log.Debug("Got reconnection")
+				// Add the client to our list
+				h.clients[c] = true
+				// Give it the queue of the old client
 				c.QueueC <- cOld.getQueue()
 				f2Log.Debug("Closing old given reconnection")
 				close(cOld.Pending)
@@ -146,7 +149,7 @@ func (h *Hub) receiveInt() {
 				c := msg.From
 				fLog.Debug("Reconnection timed out", "fromcid", c.ID, "fromcref", c.Ref)
 				if !h.clients[c] {
-					fLog.Debug("Timed-out client gone", "fromcid", c.ID, "fromcref", c.Ref)
+					fLog.Debug("Timed-out client gone", "fromcid", c.ID, "fromcref", c.Ref, "clientmap", h.clients)
 					continue
 				}
 
@@ -181,7 +184,7 @@ func (h *Hub) receiveInt() {
 			case msg.Env != nil && msg.Env.Body != nil:
 				// We have a peer message
 				c := msg.From
-				fLog.Debug("Got peer msg", "fromcid", c.ID, "fromcref", c.Ref)
+				fLog.Debug("Got peer msg", "fromcid", c.ID, "fromcref", c.Ref, "content", string(msg.Env.Body))
 
 				toCls := h.exclude(c)
 				msg.Env.From = []string{c.ID}

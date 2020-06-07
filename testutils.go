@@ -290,3 +290,39 @@ func maxLength(a []string, b []string) int {
 	}
 	return len(b)
 }
+
+// A simple semaphore which starts primed and can be marked done.
+
+type semaphore struct {
+	closed bool
+	cloMux sync.Mutex
+	waiter chan bool
+}
+
+func newSemaphore() *semaphore {
+	return &semaphore{
+		closed: false,
+		cloMux: sync.Mutex{},
+		waiter: make(chan bool),
+	}
+}
+
+func (s *semaphore) done() {
+	defer s.cloMux.Unlock()
+	s.cloMux.Lock()
+
+	if !s.closed {
+		s.closed = true
+		close(s.waiter)
+	}
+}
+
+func (s *semaphore) isDone() bool {
+	defer s.cloMux.Unlock()
+	s.cloMux.Lock()
+	return s.closed
+}
+
+func (s *semaphore) wait() {
+	<-s.waiter
+}

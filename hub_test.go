@@ -948,8 +948,10 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 		}
 	}
 
-	// Run a few sends for a client
-	sendMany := func(twsC chan *tConn, id string, sent *[]string) {
+	// Run a few sends for a client. When first dialling, we have to
+	// wait for the other client to join before continuing
+	sendMany := func(twsC chan *tConn, id string, sent *[]string,
+		meJoined *semaphore, theyJoined *semaphore) {
 		defer sessions.Done()
 
 		for i := 0; i < 5; i++ {
@@ -959,7 +961,17 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				t.Fatal(err)
 			}
 			tws := newTConn(ws, id)
+			fLog.Debug("Dialled", "id", id)
+			if !meJoined.isDone() {
+				fLog.Debug("Waiting for Welcome", "id", id)
+				if err := tws.swallowIntentMessage("Welcome"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			meJoined.done()
+			theyJoined.wait()
 			twsC <- tws
+			fLog.Debug("Going to send many", "id", id)
 			send(tws, id, sent)
 			tws.close()
 			time.Sleep(time.Duration(rand.Intn(500)) * time.Millisecond)
@@ -980,7 +992,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			if rr.err != nil {
 				// Presume connection is closed
 				fLog.Debug("Read error, presume closed",
-					"reads", reads, "err", rr.err.Error())
+					"id", id, "reads", reads, "err", rr.err.Error())
 				break
 			}
 			reads++
@@ -993,6 +1005,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				continue
 			}
 			*rcvd = append(*rcvd, string(env.Body))
+			fLog.Debug("Received", "content", string(env.Body))
 		}
 	}
 
@@ -1014,10 +1027,12 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	// Run a number of send and receives for two clients
 	sent1, rcvd1, twsC1 := &[]string{}, &[]string{}, make(chan *tConn, 5)
 	sent2, rcvd2, twsC2 := &[]string{}, &[]string{}, make(chan *tConn, 5)
+	ws1Joined := newSemaphore()
+	ws2Joined := newSemaphore()
 
 	sessions.Add(2)
-	go sendMany(twsC1, "WS1", sent1)
-	go sendMany(twsC2, "WS2", sent2)
+	go sendMany(twsC1, "WS1", sent1, ws1Joined, ws2Joined)
+	go sendMany(twsC2, "WS2", sent2, ws2Joined, ws1Joined)
 	sessions.Add(2)
 	go receiveMany(twsC1, "WS1", rcvd1)
 	go receiveMany(twsC2, "WS2", rcvd2)
