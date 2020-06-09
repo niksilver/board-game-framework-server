@@ -85,3 +85,56 @@ func TestBuffer_BasicAddNextFromInitialisation(t *testing.T) {
 		t.Error("Getting next should give error, but it didn't")
 	}
 }
+
+func TestBuffer_GettingEnvelopeThatIsntThere(t *testing.T) {
+	buf := NewBuffer()
+	buf.Add(&Envelope{
+		Num:    1001,
+		Intent: "intent_1001",
+	})
+	buf.Add(&Envelope{
+		Num:    1003,
+		Intent: "intent_1003",
+	})
+	buf.Add(&Envelope{
+		Num:    1004,
+		Intent: "intent_1004",
+	})
+	buf.Set(1001)
+
+	// First get should be okay
+	if !buf.HasUnsent() {
+		t.Error("Expected to hear there is an unsent envelope")
+	}
+	env1001, err := buf.Next()
+	if err != nil {
+		t.Errorf("Should have been able to get next, but got error %s", err.Error())
+	}
+	if env1001.Intent != "intent_1001" {
+		t.Errorf("Should have got envelope with intent_1001, but got %s", env1001.Intent)
+	}
+
+	// Following get should not be okay
+	if buf.HasUnsent() {
+		t.Error("Should have reported the expected envelope is not present")
+	}
+	env1002, err := buf.Next()
+	if err == nil {
+		t.Error("Should not have been able to get 1002, but no error returned")
+	}
+	if env1002 != nil {
+		t.Errorf("Should not have been able to get 1002, but got %v", env1002)
+	}
+
+	// Further gets should also fail
+	if buf.HasUnsent() {
+		t.Error("Should have reported again the expected envelope is not present")
+	}
+	env1002a, err := buf.Next()
+	if err == nil {
+		t.Error("Should not have been able to get next, but no error returned")
+	}
+	if env1002a != nil {
+		t.Errorf("Should not have been able to get next, but got %v", env1002a)
+	}
+}

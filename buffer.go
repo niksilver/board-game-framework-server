@@ -73,7 +73,8 @@ func (b *Buffer) Next() (*Envelope, error) {
 	return nil, fmt.Errorf("Envelope num %d not in buffer", b.unsent)
 }
 
-// Add an envelope into the buffer
+// Add an envelope into the buffer. Envelopes should have sequential
+// nums, otherwise eventually the next envelope will not be found.
 func (b *Buffer) Add(env *Envelope) {
 	b.mx.Lock()
 	defer b.mx.Unlock()
