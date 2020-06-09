@@ -222,3 +222,35 @@ func TestBuffer_Cleaning(t *testing.T) {
 	// Wait for all the goroutines to finish
 	WG.Wait()
 }
+
+func TestBuffer_CleaningEdgeCases(t *testing.T) {
+	// Cleaning a just-initialised buffer should be fine
+	buf1 := NewBuffer()
+	buf1.Clean()
+
+	// Starting periodic cleaning twice should be fine
+	buf2 := NewBuffer()
+	buf2.Start()
+	buf2.Start()
+	buf2.Stop()
+	WG.Wait()
+
+	// Stopping periodic cleaning that's not started should be fine
+	buf3 := NewBuffer()
+	buf3.Stop()
+	WG.Wait()
+
+	// Stopping periodic cleaning twice should be fine
+	buf4 := NewBuffer()
+	buf4.Start()
+	buf4.Stop()
+	buf4.Stop()
+	WG.Wait()
+
+	// Cleaning while periodic cleaning should be fine
+	buf5 := NewBuffer()
+	buf5.Start()
+	buf5.Clean()
+	buf5.Stop()
+	WG.Wait()
+}

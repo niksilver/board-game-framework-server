@@ -17,7 +17,8 @@ type Buffer struct {
 	unsentSet bool
 	buf       []*Envelope
 	mx        sync.Mutex
-	done      chan bool
+	cleaning  bool      // If periodic or one-off cleaning is in progress
+	done      chan bool // Or nil if periodic cleaning not started
 }
 
 // NewBuffer creates a new buffer with no unsent messages
@@ -26,7 +27,8 @@ func NewBuffer() *Buffer {
 		unsentSet: false,
 		buf:       make([]*Envelope, 0),
 		mx:        sync.Mutex{},
-		done:      make(chan bool),
+		cleaning:  false,
+		done:      nil,
 	}
 }
 
@@ -87,15 +89,22 @@ func (b *Buffer) Add(env *Envelope) {
 
 // Start a goroutine to periodically clean the buffer
 func (b *Buffer) Start() {
+	// Only start once at a time
+	if !b.trySetPeriodicCleaning() {
+		return
+	}
+
 	WG.Add(1)
 	go func() {
 		defer WG.Done()
+		defer b.unsetCleaning()
+
 		tickC := time.Tick(reconnectionTimeout / 4)
 	cleaning:
 		for {
 			select {
 			case <-tickC:
-				b.Clean()
+				b.cleanReal()
 			case <-b.done:
 				break cleaning
 			}
@@ -103,10 +112,57 @@ func (b *Buffer) Start() {
 	}()
 }
 
-// Clean the buffer, leaving envelopes within the last
-// `reconnectionTimeout`.
-func (b *Buffer) Clean() {
+// tryStartCleaning tries to set cleaning to true, if it's false, and
+// returns its success.
+func (b *Buffer) trySetCleaning() bool {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	if b.cleaning {
+		return false
+	}
+	b.cleaning = true
+	return true
+}
 
+// tryStartPeriodicCleaning tries to set periodic cleaning to true,
+// if not already cleaning, and // returns its success.
+func (b *Buffer) trySetPeriodicCleaning() bool {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	if b.cleaning {
+		return false
+	}
+	b.cleaning = true
+	b.done = make(chan bool, 1)
+	return true
+}
+
+// Unset periodic and one-off cleaning
+func (b *Buffer) unsetCleaning() {
+	b.mx.Lock()
+	b.cleaning = false
+	b.done = nil
+	b.mx.Unlock()
+}
+
+func (b *Buffer) isCleaning() bool {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	return b.cleaning
+}
+
+// Clean the buffer, leaving envelopes within the last
+// `reconnectionTimeout`. Does nothing if periodic cleaning running
+func (b *Buffer) Clean() {
+	if !b.trySetCleaning() {
+		return
+	}
+	b.cleanReal()
+	b.unsetCleaning()
+}
+
+// The real cleaning process
+func (b *Buffer) cleanReal() {
 	keep := time.Now().Add(reconnectionTimeout * -11 / 10)
 	keepMs := keep.UnixNano() / 1_000_000
 	for i := range b.buf {
@@ -121,5 +177,9 @@ func (b *Buffer) Clean() {
 
 // Stop the periodic cleaning goroutine
 func (b *Buffer) Stop() {
-	b.done <- true
+	b.mx.Lock()
+	defer b.mx.Unlock()
+	if b.done != nil {
+		b.done <- true
+	}
 }
