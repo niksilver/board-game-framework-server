@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Buffer holds envelopes which may need to be sent or resent at a
@@ -16,6 +17,7 @@ type Buffer struct {
 	unsentSet bool
 	buf       []*Envelope
 	mx        sync.Mutex
+	done      chan bool
 }
 
 // NewBuffer creates a new buffer with no unsent messages
@@ -24,6 +26,7 @@ func NewBuffer() *Buffer {
 		unsentSet: false,
 		buf:       make([]*Envelope, 0),
 		mx:        sync.Mutex{},
+		done:      make(chan bool),
 	}
 }
 
@@ -80,4 +83,43 @@ func (b *Buffer) Add(env *Envelope) {
 	defer b.mx.Unlock()
 
 	b.buf = append(b.buf, env)
+}
+
+// Start a goroutine to periodically clean the buffer
+func (b *Buffer) Start() {
+	WG.Add(1)
+	go func() {
+		defer WG.Done()
+		tickC := time.Tick(reconnectionTimeout / 4)
+	cleaning:
+		for {
+			select {
+			case <-tickC:
+				b.Clean()
+			case <-b.done:
+				break cleaning
+			}
+		}
+	}()
+}
+
+// Clean the buffer, leaving envelopes within the last
+// `reconnectionTimeout`.
+func (b *Buffer) Clean() {
+
+	keep := time.Now().Add(reconnectionTimeout * -11 / 10)
+	keepMs := keep.UnixNano() / 1_000_000
+	for i := range b.buf {
+		if b.buf[i].Time >= keepMs {
+			b.mx.Lock()
+			b.buf = b.buf[i:]
+			b.mx.Unlock()
+			break
+		}
+	}
+}
+
+// Stop the periodic cleaning goroutine
+func (b *Buffer) Stop() {
+	b.done <- true
 }

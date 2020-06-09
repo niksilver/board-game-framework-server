@@ -5,7 +5,9 @@
 package main
 
 import (
+	"strconv"
 	"testing"
+	"time"
 )
 
 func TestBuffer_BasicAddNextFromInitialisation(t *testing.T) {
@@ -137,4 +139,86 @@ func TestBuffer_GettingEnvelopeThatIsntThere(t *testing.T) {
 	if env1002a != nil {
 		t.Errorf("Should not have been able to get next, but got %v", env1002a)
 	}
+}
+
+func TestBuffer_Cleaning(t *testing.T) {
+	oldReconnectionTimeout := reconnectionTimeout
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	reconnectionTimeout = 500 * time.Millisecond
+
+	// Add lots of envelopes going from 600ms in the future (because that's
+	// how long we'll pause for cleaning) to 5 seconds before then
+	buf := NewBuffer()
+	now := time.Now().UnixNano()/1_000_000 + 600
+	start := now - 5000
+	maxenvs := int64(100)
+	inc := 5000 / maxenvs
+	num := 1001
+	numOld := -1    // Should not be able to get this; not yet set
+	numRecent := -1 // Should be able to get this; not yet set
+	for t := start; t < now; t += inc {
+		buf.Add(&Envelope{
+			Num:    num,
+			Time:   t,
+			Intent: "intent_" + strconv.Itoa(num),
+		})
+		if now-t >= 800 {
+			// The latest envelope num that's 800ms old
+			numOld = num
+		}
+		if numRecent == -1 && now-t < 500 {
+			// The earliest envelope num that's 500ms old
+			numRecent = num
+		}
+		num += 1
+	}
+
+	// At this pre-cleaning stage, getting an old env should be successful
+	buf.Set(numOld)
+	if !buf.HasUnsent() {
+		t.Error("Old unsent envelope should be available")
+	}
+	envOld, err := buf.Next()
+	if err != nil {
+		t.Errorf("Getting next old unsent envelope gave error %s", err.Error())
+	}
+	if envOld == nil {
+		t.Error("Got old unsent envelope, but it was nil")
+	}
+
+	// Run the cleaning for just 600ms
+	buf.Start()
+	time.Sleep(600 * time.Millisecond)
+	buf.Stop()
+
+	// There should be no envelopes that are 800ms old
+	if buf.HasUnsent() {
+		t.Error("After cleaning, buffer still has old unsent envelope")
+	}
+	envOld, err = buf.Next()
+	if err == nil {
+		t.Error("Error expected getting old envelope, but none returned")
+	}
+	if envOld != nil {
+		t.Errorf("Got old envelope even after cleaning: %v", envOld)
+	}
+
+	// There should still be some recent envelopes
+	buf.Set(numRecent)
+	if !buf.HasUnsent() {
+		t.Error("Recent unsent envelope should be available")
+	}
+	envRecent, err := buf.Next()
+	if err != nil {
+		t.Errorf("Getting next recent unsent envelope gave error %s", err.Error())
+	}
+	if envRecent == nil {
+		t.Error("Got recent unsent envelope, but it was nil")
+	}
+
+	// Wait for all the goroutines to finish
+	WG.Wait()
 }
