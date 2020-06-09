@@ -38,6 +38,7 @@ type Message struct {
 type Envelope struct {
 	From   []string // Client id this is from
 	To     []string // Ids of all clients this is going to
+	Num    int      // A number reference for this envelope
 	Time   int64    // Server time when sent, in seconds since the epoch
 	Intent string   // What the message is intended to convey
 	Body   []byte   // Original raw message from the sending client
