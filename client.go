@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -34,19 +33,18 @@ func init() {
 
 type Client struct {
 	ID string
-	// For tracing purposes only
+	// Last envelope number received by predecessor, or -1
+	LastNum int
+	// Ref for tracing purposes only
 	Ref string
 	// Don't close the websocket directly. That's managed internally.
 	WS  *websocket.Conn
 	Hub *Hub
+	// Buffer of messages received, in case they need to be resent.
+	Buffer *Buffer
 	// To receive internal message from the hub. The hub will close it
 	// once it knows the client wants to stop.
 	Pending chan *Message
-	// To receive a queue of messages when picking up from a
-	// disconnected client with the same ID.
-	QueueC chan []*Message
-	queue  []*Message
-	qMux   sync.Mutex
 	// pinger ticks for pinging
 	pinger *time.Ticker
 }
@@ -144,13 +142,16 @@ func (c *Client) Start() {
 		return nil
 	})
 
+	// Start periodic buffer cleaning
+	c.Buffer.Start()
+
 	// Start sending messages externally
-	fLog.Debug("client.start, adding for sendExt")
+	fLog.Debug("Adding for sendExt")
 	WG.Add(1)
 	go c.sendExt()
 
 	// Start receiving messages from the outside
-	fLog.Debug("client.start, adding for receiveExt")
+	fLog.Debug("Adding for receiveExt")
 	WG.Add(1)
 	go c.receiveExt()
 }
@@ -222,23 +223,21 @@ func (c *Client) sendExt() {
 	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
 
-	// Keep reselecting scenarios until we need to exit
+	// Keep go through scenarios until we need to shut down this client
 	connected := true
-	exit := false
-scenarios:
-	for !exit {
-		switch {
-		case connected && c.queueEmpty():
-			fLog.Debug("Scenario: connected, queue empty")
-			connected, exit = c.connectedQueueEmpty()
-		case connected && !c.queueEmpty():
-			fLog.Debug("Scenario: connected, queue not empty")
-			connected, exit = c.connectedQueueNotEmpty()
-		case !connected:
-			fLog.Debug("Scenario: disconnected")
-			c.disconnected()
-			break scenarios
-		}
+	shutdown := false
+
+	if connected && c.Buffer.HasUnsent() {
+		fLog.Debug("Scenario: connected, unsent envelopes")
+		connected, shutdown = c.connectedWithUnsent()
+	}
+	if !shutdown && connected && !c.Buffer.HasUnsent() {
+		fLog.Debug("Scenario: connected, no unsent envelopes")
+		connected, shutdown = c.connectedNoUnsent()
+	}
+	if !shutdown && !connected {
+		fLog.Debug("Scenario: disconnected")
+		c.disconnected()
 	}
 
 	// We are here due to either the channel being closed or the
@@ -247,6 +246,7 @@ scenarios:
 	fLog.Debug("Closing conn")
 	c.WS.Close()
 	c.pinger.Stop()
+	c.Buffer.Stop()
 	fLog.Debug("Waiting for channel close")
 	for {
 		if _, ok := <-c.Pending; !ok {
@@ -259,70 +259,10 @@ scenarios:
 	Shub.Release(c.Hub)
 }
 
-// connectedQueueEmpty is for processing messages from the hub when
-// the queue is empty. Returns connected flag and exit flag.
-func (c *Client) connectedQueueEmpty() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedQueueEmpty", "id", c.ID, "c", c.Ref)
-
-	// Keep receiving internal messages
-	for {
-		fLog.Debug("Entering select")
-		select {
-		case m, ok := <-c.Pending:
-			fLog.Debug("Got pending")
-			if !ok {
-				// Channel closed, we need to shut down
-				fLog.Debug("Channel closed")
-				return true, true
-			}
-			if m.Env.Intent == "LostConnection" {
-				fLog.Debug("Got LostConnection intent")
-				return false, false
-			}
-			// We should send this message
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("Deadline1 error", "err", err)
-				c.enqueue(m)
-				return false, false
-			}
-			if err := c.WS.WriteJSON(m.Env); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("Write1 error", "err", err)
-				c.enqueue(m)
-				return false, false
-			}
-			fLog.Debug("Wrote JSON", "content", string(m.Env.Body))
-		case q := <-c.QueueC:
-			fLog.Debug("Got a queue")
-			c.qMux.Lock()
-			c.queue = q
-			c.qMux.Unlock()
-			fLog.Debug("Have queue, reselecting scenario")
-			return true, false
-		case <-c.pinger.C:
-			fLog.Debug("Sending ping")
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("Deadline2 error", "err", err)
-				return false, false
-			}
-			if err := c.WS.WriteMessage(
-				websocket.PingMessage, nil); err != nil {
-				// Ping write error, move to disconnected state
-				fLog.Debug("Write2 error", "err", err)
-				return false, false
-			}
-		}
-	}
-}
-
-// connectedQueueNotEmpty is for processing messages from the hub while
-// sending messages from the queue. Returns connected flag and exit flag.
-func (c *Client) connectedQueueNotEmpty() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedQueueNotEmpty", "id", c.ID, "c", c.Ref)
+// connectedWithUnsent is for processing messages from the hub while
+// sending messages from the queue. Returns connected flag and shutdown flag.
+func (c *Client) connectedWithUnsent() (bool, bool) {
+	fLog := aLog.New("fn", "client.connecteWithUnsent", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -340,13 +280,10 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
-			// Message needs to go onto the end of the queue
-			c.enqueue(m)
-			// DEBUG DEBUG DEBUG
-			fLog.Debug("Appended to queue", "content", string(m.Env.Body))
-		case <-c.QueueC:
-			fLog.Debug("Got a queue while processing queue")
-			panic("Should not have been sent a queue")
+			// Message needs to go into the buffer
+			fLog.Debug("Added to buffer", "env", niceEnv(m.Env))
+			c.Buffer.Add(m.Env)
+
 		case <-c.pinger.C:
 			fLog.Debug("Sending ping")
 			if err := c.WS.SetWriteDeadline(
@@ -362,25 +299,82 @@ func (c *Client) connectedQueueNotEmpty() (bool, bool) {
 				return false, false
 			}
 		default:
-			fLog.Debug("Sending message at head of queue")
-			m := c.peek()
+			fLog.Debug("Sending envelope from buffer")
+			env, err := c.Buffer.Next()
+			if err != nil {
+				fLog.Debug("Problem getting next", "err", err.Error())
+				return false, true
+			}
+			fLog.Debug("Envelope okay", "env", niceEnv(env))
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message deadline error", "err", err)
 				return false, false
 			}
-			if err := c.WS.WriteJSON(m.Env); err != nil {
+			if err := c.WS.WriteJSON(env); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message write error", "err", err)
 				return false, false
 			}
 			// Send was okay
-			fLog.Debug("Sent okay", "content", string(m.Env.Body))
-			c.remove()
-			if c.queueEmpty() {
-				fLog.Debug("Queue now empty; reselecting scenario")
+			fLog.Debug("Sent okay")
+			if !c.Buffer.HasUnsent() {
+				fLog.Debug("Buffer has no unsent; reselecting scenario")
 				return true, false
+			}
+		}
+	}
+}
+
+// connectedNoUnsent is for processing messages from the hub when
+// the buffer has no unsent envelopes. Returns connected and shutdown flags.
+func (c *Client) connectedNoUnsent() (bool, bool) {
+	fLog := aLog.New("fn", "client.connectedNoUnsent", "id", c.ID, "c", c.Ref)
+
+	// Keep receiving internal messages
+	for {
+		fLog.Debug("Entering select")
+		select {
+		case m, ok := <-c.Pending:
+			fLog.Debug("Got pending")
+			if !ok {
+				// Channel closed, we need to shut down
+				fLog.Debug("Channel closed")
+				return true, true
+			}
+			if m.Env.Intent == "LostConnection" {
+				fLog.Debug("Got LostConnection intent")
+				return false, false
+			}
+			// We should send this message
+			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
+			c.Buffer.Add(m.Env)
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline error", "err", err)
+				return false, false
+			}
+			if err := c.WS.WriteJSON(m.Env); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("WriteJSON error", "err", err)
+				return false, false
+			}
+			fLog.Debug("Wrote JSON", "content", string(m.Env.Body))
+		case <-c.pinger.C:
+			fLog.Debug("Sending ping")
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline2 error", "err", err)
+				return false, false
+			}
+			if err := c.WS.WriteMessage(
+				websocket.PingMessage, nil); err != nil {
+				// Ping write error, move to disconnected state
+				fLog.Debug("Write2 error", "err", err)
+				return false, false
 			}
 		}
 	}
@@ -408,52 +402,15 @@ func (c *Client) disconnected() {
 				fLog.Debug("Got LostConnection while disconnected")
 				continue
 			}
-			// Message needs to go onto the end of the queue
-			c.enqueue(m)
-			// DEBUG DEBUG DEBUG
-			fLog.Debug("Appended to queue", "content", string(m.Env.Body))
-		case <-c.QueueC:
-			fLog.Debug("Got a queue while disconnected")
-			panic("Got queue while disconnected")
+			// Message needs to go into the buffer
+			c.Buffer.Add(m.Env)
 		case <-c.pinger.C:
 			fLog.Debug("Got a ping message; ignoring")
 		}
 	}
 }
 
-// enqueue a message at the end of the queue
-func (c *Client) enqueue(m *Message) {
-	c.qMux.Lock()
-	c.queue = append(c.queue, m)
-	c.qMux.Unlock()
-}
-
-// peek at the message at the head of the queue. Panic if queue is empty.
-func (c *Client) peek() *Message {
-	defer c.qMux.Unlock()
-	c.qMux.Lock()
-	return c.queue[0]
-}
-
-// remove the message at the head of the queue. Panic if queue is empty.
-func (c *Client) remove() {
-	c.qMux.Lock()
-	c.queue = c.queue[1:len(c.queue)]
-	c.qMux.Unlock()
-}
-
-// getQueue will get a copy of the queue
-func (c *Client) getQueue() []*Message {
-	defer c.qMux.Unlock()
-	c.qMux.Lock()
-
-	qOut := make([]*Message, len(c.queue))
-	copy(qOut, c.queue)
-	return qOut
-}
-
-func (c *Client) queueEmpty() bool {
-	defer c.qMux.Unlock()
-	c.qMux.Lock()
-	return len(c.queue) == 0
+func niceEnv(e *Envelope) string {
+	return fmt.Sprintf("Env{Num:%d,Intent:%s,Body:%s}",
+		e.Num, e.Intent, string(e.Body))
 }

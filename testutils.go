@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,15 +35,17 @@ type readRes struct {
 }
 
 // tLog is a logger for our tests only.
-//
-// Use it like this:
-//     tLog.Info("This is my message", "key", value,...)
 var tLog = Log.New("side", "test")
+
+// uLog is a logger for our these utils only.
+var uLog = Log.New("side", "utils")
 
 func init() {
 	// Decide if we want to output debug logging
 	// tLog.SetHandler(log15.DiscardHandler())
 	tLog.SetHandler(log15.StdoutHandler)
+	uLog.SetHandler(log15.DiscardHandler())
+	// uLog.SetHandler(log15.StdoutHandler)
 }
 
 // sameElements tests if two string slices have the same elements
@@ -70,8 +73,9 @@ func newTestServer(hdlr http.HandlerFunc) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(hdlr))
 }
 
-// dial connects to a test server, sending a clientID (if non-empty).
-func dial(serv *httptest.Server, path string, clientID string) (
+// dial connects to a test server, sending a clientID (if non-empty)
+// and last num received (if non-negative).
+func dial(serv *httptest.Server, path string, clientID string, num int) (
 	ws *websocket.Conn,
 	resp *http.Response,
 	err error,
@@ -79,6 +83,11 @@ func dial(serv *httptest.Server, path string, clientID string) (
 	// Convert http://a.b.c.d to ws://a.b.c.d
 	// and add the given path
 	url := "ws" + strings.TrimPrefix(serv.URL, "http") + path
+
+	// Add a last num received, if we've got one
+	if num >= 0 {
+		url = url + "?lastnum=" + strconv.Itoa(num)
+	}
 
 	// If necessary, creater a header with the given cookie
 	var header http.Header
@@ -130,15 +139,15 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 		// We're not already running a read, so let's start one
 		c.readRes = make(chan readRes)
 		WG.Add(1)
-		tLog.Debug("tConn.readMessage, entering goroutine", "id", c.id)
+		uLog.Debug("tConn.readMessage, entering goroutine", "id", c.id)
 		go func() {
-			defer tLog.Debug("tConn.readMessage, exited goroutine", "id", c.id)
+			defer uLog.Debug("tConn.readMessage, exited goroutine", "id", c.id)
 			defer WG.Done()
-			tLog.Debug("tConn.readMessage, reading", "id", c.id)
+			uLog.Debug("tConn.readMessage, reading", "id", c.id)
 			mType, msg, err := c.ws.ReadMessage()
-			tLog.Debug("tConn.readMessage, sending result", "msg", string(msg), "error", err, "id", c.id)
+			uLog.Debug("tConn.readMessage, sending result", "msg", string(msg), "error", err, "id", c.id)
 			c.readRes <- readRes{mType, msg, err}
-			tLog.Debug("tConn.readMessage, sent result", "id", c.id)
+			uLog.Debug("tConn.readMessage, sent result", "id", c.id)
 		}()
 	}
 	// Now wait for a result or a timeout
@@ -159,8 +168,8 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 // close the `tConn`. Always use this to close the connection, instead
 // of the `Conn.Close()`.
 func (c *tConn) close() {
-	tLog.Debug("tConn.close, entering", "id", c.id)
-	tLog.Debug("tConn.close, closing conn", "id", c.id)
+	uLog.Debug("tConn.close, entering", "id", c.id)
+	uLog.Debug("tConn.close, closing conn", "id", c.id)
 	c.ws.Close()
 	// If tConn.readMessage is running we want to ensure sending to
 	// c.readRes doesn't block.
@@ -173,20 +182,20 @@ func (c *tConn) close() {
 	// lock only after consuming it.
 	// In the second case we can grab the lock then consume it.
 	if c.readRes != nil {
-		tLog.Debug("tConn.close, locking channel read", "id", c.id)
+		uLog.Debug("tConn.close, locking channel read", "id", c.id)
 		c.chReadMx.Lock()
 		// Now either the message has been consumed and the channel is nil,
 		// or there is a message waiting to be consumed.
 		if c.readRes != nil {
-			tLog.Debug("tConn.close, consuming from channel", "id", c.id)
+			uLog.Debug("tConn.close, consuming from channel", "id", c.id)
 			<-c.readRes
-			tLog.Debug("tConn.close, consumed from channel", "id", c.id)
+			uLog.Debug("tConn.close, consumed from channel", "id", c.id)
 			c.readRes = nil
 		}
-		tLog.Debug("tConn.close, unlocking channel read", "id", c.id)
+		uLog.Debug("tConn.close, unlocking channel read", "id", c.id)
 		c.chReadMx.Unlock()
 	}
-	tLog.Debug("tConn.close, exiting", "id", c.id)
+	uLog.Debug("tConn.close, exiting", "id", c.id)
 }
 
 // swallowIntentMessage expects the next message to be of the given intent.

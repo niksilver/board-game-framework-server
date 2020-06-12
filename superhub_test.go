@@ -50,7 +50,7 @@ func TestSuperhub_LotsOfActivityEndsWithEmptySuperHub(t *testing.T) {
 			// New client join
 			id := "SHUB" + strconv.Itoa(i)
 			game := "/game" + strconv.Itoa(rand.Intn(10))
-			ws, _, err := dial(serv, game, id)
+			ws, _, err := dial(serv, game, id, -1)
 			defer func() {
 				ws.Close()
 			}()

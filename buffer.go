@@ -87,6 +87,15 @@ func (b *Buffer) Add(env *Envelope) {
 	b.buf = append(b.buf, env)
 }
 
+// TakeOver the envelopes of another buffer, which will be empty
+func (b *Buffer) TakeOver(old *Buffer) {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
+	b.buf = old.buf
+	old.buf = make([]*Envelope, 0)
+}
+
 // Start a goroutine to periodically clean the buffer
 func (b *Buffer) Start() {
 	// Only start once at a time

@@ -23,7 +23,7 @@ func TestHub_SendsWelcome(t *testing.T) {
 	defer serv.Close()
 
 	// Connect to the server
-	ws, _, err := dial(serv, "/hub.sends.welcome", "WTESTER")
+	ws, _, err := dial(serv, "/hub.sends.welcome", "WTESTER", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestHub_WelcomeIsFromExistingClients(t *testing.T) {
 	game := "/hub.welcome.from.existing"
 
 	// Connect the first client, and consume the welcome message
-	ws1, _, err := dial(serv, game, "WF1")
+	ws1, _, err := dial(serv, game, "WF1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +85,7 @@ func TestHub_WelcomeIsFromExistingClients(t *testing.T) {
 	}
 
 	// Connect the second client, and consume intro messages
-	ws2, _, err := dial(serv, game, "WF2")
+	ws2, _, err := dial(serv, game, "WF2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func TestHub_WelcomeIsFromExistingClients(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "WF3")
+	ws3, _, err := dial(serv, game, "WF3", -1)
 	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 
 	// Client 1 joins normally
 
-	ws1, _, err := dial(serv, game, "CL1")
+	ws1, _, err := dial(serv, game, "CL1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 
 	// Client 2 joins, and client 1 gets a joiner message
 
-	ws2, _, err := dial(serv, game, "CL2")
+	ws2, _, err := dial(serv, game, "CL2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 
 	// Client 3 joins, and clients 1 and 2 get joiner messages.
 
-	ws3, _, err := dial(serv, game, "CL3")
+	ws3, _, err := dial(serv, game, "CL3", -1)
 	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestHub_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 1 joins normally
 
-	ws1, _, err := dial(serv, game, "EN1")
+	ws1, _, err := dial(serv, game, "EN1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +298,7 @@ func TestHub_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 2 joins, and client 1 gets a joiner message
 
-	ws2, _, err := dial(serv, game, "EN2")
+	ws2, _, err := dial(serv, game, "EN2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -313,7 +313,7 @@ func TestHub_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 3 joins, and clients 1 and 2 get joiner messages.
 
-	ws3, _, err := dial(serv, game, "EN3")
+	ws3, _, err := dial(serv, game, "EN3", -1)
 	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +434,7 @@ func TestHub_GeneralChaos(t *testing.T) {
 		case i < 10 || action < 0.25:
 			// New client join
 			id := "CHAOS" + strconv.Itoa(i)
-			ws, _, err := dial(serv, "/hub.chaos", id)
+			ws, _, err := dial(serv, "/hub.chaos", id, -1)
 			defer func() {
 				ws.Close()
 			}()
@@ -498,7 +498,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 	game := "/hub.joiner.messages"
 
 	// Connect the first client
-	ws1, _, err := dial(serv, game, "JM1")
+	ws1, _, err := dial(serv, game, "JM1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -509,7 +509,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "JM2")
+	ws2, _, err := dial(serv, game, "JM2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -555,7 +555,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "JM3")
+	ws3, _, err := dial(serv, game, "JM3", -1)
 	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -644,7 +644,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	game := "/hub.leaver.messages"
 
 	// Connect the first client
-	ws1, _, err := dial(serv, game, "LV1")
+	ws1, _, err := dial(serv, game, "LV1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -655,7 +655,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "LV2")
+	ws2, _, err := dial(serv, game, "LV2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -669,7 +669,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "LV3")
+	ws3, _, err := dial(serv, game, "LV3", -1)
 	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -778,7 +778,7 @@ func TestHub_SendsErrorOverMaximumClients(t *testing.T) {
 	// Let 50 clients join the game
 	for i := 0; i < MaxClients; i++ {
 		id := "MAX" + strconv.Itoa(i)
-		ws, _, err := dial(serv, "/hub.max", id)
+		ws, _, err := dial(serv, "/hub.max", id, -1)
 		tws := newTConn(ws, id)
 		defer tws.close()
 		if err != nil {
@@ -792,7 +792,7 @@ func TestHub_SendsErrorOverMaximumClients(t *testing.T) {
 	// Trying to connect should get a response, but an error response
 	// from the upgraded websocket connection.
 
-	ws, _, err := dial(serv, "/hub.max", "MAXOVER")
+	ws, _, err := dial(serv, "/hub.max", "MAXOVER", -1)
 	if err != nil {
 		t.Fatalf("Failed network connection: %s", err)
 	}
@@ -853,7 +853,7 @@ func TestHub_NonReadingClientsDontBlock(t *testing.T) {
 	// Let the clients join the game
 	for i := 0; i < max; i++ {
 		id := "BL" + strconv.Itoa(i)
-		ws, _, err := dial(serv, "/hub.max", id)
+		ws, _, err := dial(serv, "/hub.max", id, -1)
 		tws := newTConn(ws, id)
 		defer tws.close()
 		if err != nil {
@@ -950,12 +950,12 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 
 	// Run a few sends for a client. When first dialling, we have to
 	// wait for the other client to join before continuing
-	sendMany := func(twsC chan *tConn, id string, sent *[]string,
+	sendMany := func(twsC chan *tConn, id string, num int, sent *[]string,
 		meJoined *semaphore, theyJoined *semaphore) {
 		defer sessions.Done()
 
 		for i := 0; i < 5; i++ {
-			ws, _, err := dial(serv, game, id)
+			ws, _, err := dial(serv, game, id, num)
 			if err != nil {
 				ws.Close()
 				t.Fatal(err)
@@ -980,7 +980,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	}
 
 	// Receive messages from one connection
-	receive := func(tws *tConn, id string, rcvd *[]string) {
+	receive := func(tws *tConn, id string, num *int, rcvd *[]string) {
 		reads := 0
 		for {
 			rr, timedOut := tws.readMessage(500)
@@ -1005,12 +1005,13 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				continue
 			}
 			*rcvd = append(*rcvd, string(env.Body))
+			*num = env.Num
 			fLog.Debug("Received", "content", string(env.Body))
 		}
 	}
 
 	// Receive messages from a series of connections
-	receiveMany := func(twsC chan *tConn, id string, rcvd *[]string) {
+	receiveMany := func(twsC chan *tConn, id string, num *int, rcvd *[]string) {
 		defer sessions.Done()
 
 		for {
@@ -1020,28 +1021,30 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				fLog.Debug("No more websockets", "id", id)
 				break
 			}
-			receive(tws, id, rcvd)
+			receive(tws, id, num, rcvd)
 		}
 	}
 
 	// Run a number of send and receives for two clients
-	sent1, rcvd1, twsC1 := &[]string{}, &[]string{}, make(chan *tConn, 5)
-	sent2, rcvd2, twsC2 := &[]string{}, &[]string{}, make(chan *tConn, 5)
+	twsC1 := make(chan *tConn, 5)
+	twsC2 := make(chan *tConn, 5)
+	num1, sent1, rcvd1 := -1, &[]string{}, &[]string{}
+	num2, sent2, rcvd2 := -1, &[]string{}, &[]string{}
 	ws1Joined := newSemaphore()
 	ws2Joined := newSemaphore()
 
 	sessions.Add(2)
-	go sendMany(twsC1, "WS1", sent1, ws1Joined, ws2Joined)
-	go sendMany(twsC2, "WS2", sent2, ws2Joined, ws1Joined)
+	go sendMany(twsC1, "WS1", num1, sent1, ws1Joined, ws2Joined)
+	go sendMany(twsC2, "WS2", num2, sent2, ws2Joined, ws1Joined)
 	sessions.Add(2)
-	go receiveMany(twsC1, "WS1", rcvd1)
-	go receiveMany(twsC2, "WS2", rcvd2)
+	go receiveMany(twsC1, "WS1", &num1, rcvd1)
+	go receiveMany(twsC2, "WS2", &num2, rcvd2)
 	fLog.Debug("Waiting on first sessions")
 	sessions.Wait()
 
 	// Get any remaining messages
 
-	ws1, _, err := dial(serv, game, "WS1")
+	ws1, _, err := dial(serv, game, "WS1", -1)
 	if err != nil {
 		ws1.Close()
 		t.Fatal(err)
@@ -1050,10 +1053,10 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	sessions.Add(1)
 	go func() {
 		defer sessions.Done()
-		receive(tws1, "WS1", rcvd1)
+		receive(tws1, "WS1", &num1, rcvd1)
 	}()
 
-	ws2, _, err := dial(serv, game, "WS2")
+	ws2, _, err := dial(serv, game, "WS2", -1)
 	if err != nil {
 		ws2.Close()
 		t.Fatal(err)
@@ -1062,7 +1065,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	sessions.Add(1)
 	go func() {
 		defer sessions.Done()
-		receive(tws2, "WS2", rcvd2)
+		receive(tws2, "WS2", &num2, rcvd2)
 	}()
 	fLog.Debug("Waiting on second sessions")
 	sessions.Wait()

@@ -8,7 +8,9 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -81,16 +83,41 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start the client handler running
+	num := lastNum(r.URL.RawQuery)
 	c := &Client{
 		ID:      clientID,
+		LastNum: num,
 		WS:      ws,
 		Hub:     hub,
+		Buffer:  NewBuffer(),
 		Pending: make(chan *Message),
-		QueueC:  make(chan []*Message),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
+	if num >= 0 {
+		c.Buffer.Set(num)
+	}
 	c.Start()
 	Log.Info("Connected client", "id", clientID)
+}
+
+// lastNum gets the integer given by the lastnum query parameter,
+// or -1 if there is none.
+func lastNum(query string) int {
+	v, err := url.ParseQuery(query)
+	if err != nil {
+		aLog.Warn("Couldn't parse query string", "query", query)
+		return -1
+	}
+	lnStr := v.Get("lastnum")
+	if lnStr == "" {
+		return -1
+	}
+	num, err := strconv.Atoi(lnStr)
+	if err != nil {
+		aLog.Warn("lastnum not an integer", "lastnum", query)
+		return -1
+	}
+	return num
 }
 
 // annulCookieHandler sets up a websocket, annuls the client ID cookie,

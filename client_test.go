@@ -16,7 +16,7 @@ func TestClient_CreatesNewID(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	ws, resp, err := dial(serv, "/cl.creates.new.id", "")
+	ws, resp, err := dial(serv, "/cl.creates.new.id", "", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -37,7 +37,7 @@ func TestClient_ClientIDCookieIsPersistent(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	ws, resp, err := dial(serv, "/cl.client.id.cookie.persistent", "")
+	ws, resp, err := dial(serv, "/cl.client.id.cookie.persistent", "", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestClient_ReusesOldId(t *testing.T) {
 
 	initialClientID := "existing_value"
 
-	ws, resp, err := dial(serv, "/cl.reuses.old.id", initialClientID)
+	ws, resp, err := dial(serv, "/cl.reuses.old.id", initialClientID, -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestClient_NewIDsAreDifferent(t *testing.T) {
 
 	for i := 0; i < len(wss); i++ {
 		// Get a new client connection
-		ws, resp, err := dial(serv, "/cl.new.ids.different", "")
+		ws, resp, err := dial(serv, "/cl.new.ids.different", "", -1)
 		wss[i] = ws
 		defer wss[i].Close()
 		if err != nil {
@@ -137,7 +137,7 @@ func TestClient_SendsPings(t *testing.T) {
 		serv.Close()
 	}()
 
-	ws, _, err := dial(serv, "/cl.sends.pings", "pingtester")
+	ws, _, err := dial(serv, "/cl.sends.pings", "pingtester", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 		serv.Close()
 	}()
 
-	ws, _, err := dial(serv, "/cl.if.no.pongs", "pongtester")
+	ws, _, err := dial(serv, "/cl.if.no.pongs", "pongtester", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -246,7 +246,7 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 	game := "/cl.dupe.ids"
 
 	// Connect the first client, and consume the welcome message
-	ws1, _, err := dial(serv, game, "DUP1")
+	ws1, _, err := dial(serv, game, "DUP1", -1)
 	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +259,7 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 	}
 
 	// Connect the second client (will be duped), and consume intro messages
-	ws2a, _, err := dial(serv, game, "DUP2")
+	ws2a, _, err := dial(serv, game, "DUP2", -1)
 	defer ws2a.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 	}
 
 	// Connect the third client, which is reusing the ID of the second
-	ws2b, _, err := dial(serv, game, "DUP2")
+	ws2b, _, err := dial(serv, game, "DUP2", -1)
 	defer ws2b.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -391,7 +391,7 @@ func TestClient_ExcessiveMessageWillCloseConnection(t *testing.T) {
 	defer serv.Close()
 
 	// Connect the client, and consume the welcome message
-	ws, _, err := dial(serv, "/cl.excess.message", "EXCESS1")
+	ws, _, err := dial(serv, "/cl.excess.message", "EXCESS1", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
