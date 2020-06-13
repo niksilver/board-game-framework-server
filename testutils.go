@@ -35,17 +35,26 @@ type readRes struct {
 }
 
 // tLog is a logger for our tests only.
-var tLog = Log.New("side", "test")
+var tLog = log15.New("side", "test")
 
 // uLog is a logger for our these utils only.
-var uLog = Log.New("side", "utils")
+var uLog = log15.New("side", "utils")
 
 func init() {
-	// Decide if we want to output debug logging
-	// tLog.SetHandler(log15.DiscardHandler())
-	tLog.SetHandler(log15.StdoutHandler)
-	uLog.SetHandler(log15.DiscardHandler())
-	// uLog.SetHandler(log15.StdoutHandler)
+	tLog.SetHandler(
+		log15.LvlFilterHandler(
+			// log15.LvlWarn,
+			log15.LvlDebug,
+			log15.DiscardHandler(),
+			// log15.StdoutHandler,
+		))
+	uLog.SetHandler(
+		log15.LvlFilterHandler(
+			// log15.LvlWarn,
+			log15.LvlDebug,
+			log15.DiscardHandler(),
+			// log15.StdoutHandler,
+		))
 }
 
 // sameElements tests if two string slices have the same elements

@@ -25,12 +25,16 @@ var Shub = NewSuperhub()
 var WG = sync.WaitGroup{}
 
 // A logger for application-side logging
-var aLog = Log.New("side", "app")
+var aLog = log15.New("side", "app")
 
 func init() {
-	// Output application logs
-	// SetLvlDebugStdout()
-	aLog.SetHandler(log15.StdoutHandler)
+	aLog.SetHandler(
+		log15.LvlFilterHandler(
+			log15.LvlInfo,
+			// log15.LvlDebug,
+			// log15.DiscardHandler(),
+			log15.StdoutHandler,
+		))
 }
 
 func main() {
