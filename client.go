@@ -42,8 +42,8 @@ type Client struct {
 	Hub *Hub
 	// Buffer of messages received, in case they need to be resent.
 	Buffer *Buffer
-	// For the hub to tell sendExt it's okay to start receiving
-	OkayToReceive chan bool
+	// Channel to receive the initial buffer
+	InitialBuffer chan *Buffer
 	// To receive internal message from the hub. The hub will close it
 	// once it knows the client wants to stop.
 	Pending chan *Message
@@ -144,9 +144,6 @@ func (c *Client) Start() {
 		return nil
 	})
 
-	// Start periodic buffer cleaning
-	c.Buffer.Start()
-
 	// Start sending messages externally
 	fLog.Debug("Adding for sendExt")
 	WG.Add(1)
@@ -229,8 +226,12 @@ func (c *Client) sendExt() {
 	connected := true
 	shutdown := false
 
-	// Get the signal from the hub to select the first scenario
-	<-c.OkayToReceive
+	// Wait for the initial buffer before choosing the first scenario
+	c.Buffer = <-c.InitialBuffer
+	if c.LastNum >= 0 {
+		c.Buffer.Set(c.LastNum + 1)
+	}
+	c.Buffer.Start()
 
 	if connected && c.Buffer.HasUnsent() {
 		fLog.Debug("Scenario: connected, unsent envelopes")
@@ -285,6 +286,14 @@ func (c *Client) connectedWithUnsent() (bool, bool) {
 				// This message is for us
 				fLog.Debug("Got LostConnection intent")
 				return false, false
+			}
+			if m.Env.Intent == "PassBuffer" {
+				// This message is for us, but it's not expected here
+				fLog.Warn("Passing buffer while connected!", "newcref", m.From.Ref)
+				newBuffer := NewBuffer()
+				newBuffer.TakeOver(c.Buffer)
+				m.From.InitialBuffer <- newBuffer
+				return true, true
 			}
 			// Message needs to go into the buffer
 			fLog.Debug("Added to buffer", "env", niceEnv(m.Env))
@@ -353,6 +362,14 @@ func (c *Client) connectedNoUnsent() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
+			if m.Env.Intent == "PassBuffer" {
+				// This message is for us, but it's not expected here
+				fLog.Warn("Passing buffer while connected!", "newcref", m.From.Ref)
+				newBuffer := NewBuffer()
+				newBuffer.TakeOver(c.Buffer)
+				m.From.InitialBuffer <- newBuffer
+				return true, true
+			}
 			// We should send this message
 			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
 			c.Buffer.Add(m.Env)
@@ -407,6 +424,14 @@ func (c *Client) disconnected() {
 				// This message is for us
 				fLog.Debug("Got LostConnection while disconnected")
 				continue
+			}
+			if m.Env.Intent == "PassBuffer" {
+				// This message is for us
+				fLog.Debug("Passing buffer and exiting", "newcref", m.From.Ref)
+				newBuffer := NewBuffer()
+				newBuffer.TakeOver(c.Buffer)
+				m.From.InitialBuffer <- newBuffer
+				return
 			}
 			// Message needs to go into the buffer
 			fLog.Debug("Got envelope", "env", niceEnv(m.Env))

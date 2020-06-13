@@ -94,16 +94,13 @@ func (h *Hub) receiveInt() {
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
-				// Pass the buffer to the new client
-				c.Buffer.TakeOver(cOld.Buffer)
-				if c.LastNum >= 0 {
-					c.Buffer.Set(c.LastNum + 1)
-				}
-				fLog.Debug("Buffer taken over", "buffer", c.Buffer.String())
+				// The new client's initial buffer can only come from the old
+				// client, because it knows when it's ready
+				msg.Env.Intent = "PassBuffer"
+				cOld.Pending <- msg
 
-				// Add the client to our list and tell it it's set up okay
+				// Add the client to our list
 				h.clients[c] = true
-				c.OkayToReceive <- true
 
 				// Shut down old client
 				h.remove(cOld)
@@ -112,9 +109,9 @@ func (h *Hub) receiveInt() {
 				h.other(msg.From) != nil && msg.From.LastNum < 0:
 				// New client for old ID, but no request to take over
 				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
-				caseLog.Debug("New client for old, without lastnum", "oldcref", cOld.Ref)
+				caseLog.Debug("New client for old, no lastnum", "oldcref", cOld.Ref)
 				h.remove(cOld)
 				h.num++
 				caseLog.Debug("Sending leaver messages")
@@ -124,9 +121,10 @@ func (h *Hub) receiveInt() {
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
 
-				// Add the client to our list and tell it it's set up okay
+				// Add the client to our list and set it going with the
+				// correct buffer
 				h.clients[c] = true
-				c.OkayToReceive <- true
+				c.InitialBuffer <- NewBuffer()
 
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
@@ -143,7 +141,7 @@ func (h *Hub) receiveInt() {
 
 				// Add the client to our list and tell it it's set up okay
 				h.clients[c] = true
-				c.OkayToReceive <- true
+				c.InitialBuffer <- NewBuffer()
 
 				// Send welcome message to joiner
 				caseLog.Debug("Sending welcome message")

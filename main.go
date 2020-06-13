@@ -90,7 +90,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		WS:            ws,
 		Hub:           hub,
 		Buffer:        NewBuffer(),
-		OkayToReceive: make(chan bool, 1),
+		InitialBuffer: make(chan *Buffer),
 		Pending:       make(chan *Message),
 	}
 	c.Ref = fmt.Sprintf("%p", c)

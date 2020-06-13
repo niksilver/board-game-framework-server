@@ -100,15 +100,19 @@ func (b *Buffer) TakeOver(old *Buffer) {
 
 // Start a goroutine to periodically clean the buffer
 func (b *Buffer) Start() {
+	fLog := aLog.New("fn", "buffer.Start", "ref", &b)
 	// Only start once at a time
 	if !b.trySetPeriodicCleaning() {
 		return
 	}
 
 	WG.Add(1)
+	fLog.Debug("Started cleaning", "b.done", b.done)
 	go func() {
 		defer WG.Done()
+		defer fLog.Debug("Done buffer 2")
 		defer b.unsetCleaning()
+		defer fLog.Debug("Done buffer 1")
 
 		tickC := time.Tick(reconnectionTimeout / 4)
 	cleaning:
@@ -190,7 +194,10 @@ func (b *Buffer) cleanReal() {
 func (b *Buffer) Stop() {
 	b.mx.Lock()
 	defer b.mx.Unlock()
+	fLog := aLog.New("fn", "buffer.Stop", "ref", &b)
+	fLog.Debug("Stopping buffer", "b.done", b.done)
 	if b.done != nil {
+		fLog.Debug("Sending stop for buffer")
 		b.done <- true
 	}
 }
