@@ -262,7 +262,8 @@ func (c *Client) sendExt() {
 // connectedWithUnsent is for processing messages from the hub while
 // sending messages from the queue. Returns connected flag and shutdown flag.
 func (c *Client) connectedWithUnsent() (bool, bool) {
-	fLog := aLog.New("fn", "client.connecteWithUnsent", "id", c.ID, "c", c.Ref)
+	fLog := aLog.New("fn", "client.connectedWithUnsent",
+		"id", c.ID, "ref", c.Ref)
 
 	// Keep receiving internal messages
 	for {

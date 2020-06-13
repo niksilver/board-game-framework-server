@@ -926,6 +926,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	game := "/hub.reconnecting"
 	listener := sync.WaitGroup{}
 	sent, rcvd := []string{}, []string{}
+	listenerReady := make(chan bool, 0) // Just closed to signal ready
 
 	// Listen for messages, allowing up 100ms for any to come through
 
@@ -944,8 +945,13 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			tws1 := newTConn(ws1, "WS1")
 			fLog.Debug("Dialled", "id", "WS1", "num", num)
 			conns++
-			// Wait for the other client
-			tws1.swallowIntentMessage("Joiner")
+			// Signal we're ready to ensure the sender connects after
+			if conns == 1 {
+				if err := tws1.swallowIntentMessage("Welcome"); err != nil {
+					t.Fatal(err)
+				}
+				close(listenerReady)
+			}
 
 			// Close the connection after some time, which gets
 			// longer and longer to ensure we do genuinely (eventually)
@@ -996,8 +1002,10 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	}
 	tws2 := newTConn(ws2, "WS2")
 	fLog.Debug("Dialled", "id", "WS2", "num", -1)
-	// Wait for the other client
-	tws2.swallowIntentMessage("Joiner")
+
+	// Wait for the listener to be ready
+	<-listenerReady
+
 	// Send some messages
 	for i := 0; i < 20; i++ {
 		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)

@@ -96,7 +96,7 @@ func (h *Hub) receiveInt() {
 
 				// Pass the buffer to the new client and add it to our list
 				c.Buffer.TakeOver(cOld.Buffer)
-				c.Buffer.Set(c.LastNum)
+				c.Buffer.Set(c.LastNum + 1)
 				h.clients[c] = true
 
 				// Shut down old client
@@ -142,7 +142,9 @@ func (h *Hub) receiveInt() {
 				c := msg.From
 				fLog.Debug("Got lost connection",
 					"fromcid", c.ID, "fromcref", c.Ref)
-				c.Pending <- msg
+				if h.clients[c] {
+					c.Pending <- msg
+				}
 
 			case msg.Env.Intent == "ReconnectionTimeout":
 				// There was no reconnection for a client
