@@ -96,8 +96,13 @@ func (h *Hub) receiveInt() {
 
 				// Pass the buffer to the new client and add it to our list
 				c.Buffer.TakeOver(cOld.Buffer)
-				c.Buffer.Set(c.LastNum + 1)
+				if c.LastNum >= 0 {
+					c.Buffer.Set(c.LastNum + 1)
+				}
+
+				// Add the client to our list and tell it it's set up okay
 				h.clients[c] = true
+				c.OkayToReceive <- true
 
 				// Shut down old client
 				h.remove(cOld)
@@ -113,29 +118,35 @@ func (h *Hub) receiveInt() {
 				h.num++
 				caseLog.Debug("Sending leaver messages")
 				h.leaver(cOld)
+
 				h.num++
-				caseLog.Debug("Sending welcome message")
-				h.welcome(c)
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
+
+				// Add the client to our list and tell it it's set up okay
 				h.clients[c] = true
+				c.OkayToReceive <- true
+
+				caseLog.Debug("Sending welcome message")
+				h.welcome(c)
 
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
 
-				// Send welcome message to joiner
-				caseLog.Debug("Sending welcome message")
-				h.num++
-				h.welcome(c)
-
 				// Send joiner message to other clients
+				h.num++
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
 
-				// Add the client to our list
+				// Add the client to our list and tell it it's set up okay
 				h.clients[c] = true
+				c.OkayToReceive <- true
+
+				// Send welcome message to joiner
+				caseLog.Debug("Sending welcome message")
+				h.welcome(c)
 
 			case msg.Env.Intent == "LostConnection":
 				// A client receiver has lost the connection

@@ -42,6 +42,8 @@ type Client struct {
 	Hub *Hub
 	// Buffer of messages received, in case they need to be resent.
 	Buffer *Buffer
+	// For the hub to tell sendExt it's okay to start receiving
+	OkayToReceive chan bool
 	// To receive internal message from the hub. The hub will close it
 	// once it knows the client wants to stop.
 	Pending chan *Message
@@ -226,6 +228,9 @@ func (c *Client) sendExt() {
 	// Keep go through scenarios until we need to shut down this client
 	connected := true
 	shutdown := false
+
+	// Get the signal from the hub to select the first scenario
+	<-c.OkayToReceive
 
 	if connected && c.Buffer.HasUnsent() {
 		fLog.Debug("Scenario: connected, unsent envelopes")

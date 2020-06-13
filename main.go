@@ -85,12 +85,13 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	// Start the client handler running
 	num := lastNum(r.URL.RawQuery)
 	c := &Client{
-		ID:      clientID,
-		LastNum: num,
-		WS:      ws,
-		Hub:     hub,
-		Buffer:  NewBuffer(),
-		Pending: make(chan *Message),
+		ID:            clientID,
+		LastNum:       num,
+		WS:            ws,
+		Hub:           hub,
+		Buffer:        NewBuffer(),
+		OkayToReceive: make(chan bool, 1),
+		Pending:       make(chan *Message),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
 	c.Start()
