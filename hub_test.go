@@ -936,6 +936,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 
 		num := -1
 		conns := 0
+		gotFirstEnv := false
 		for {
 			ws1, _, err := dial(serv, game, "WS1", num)
 			if err != nil {
@@ -945,13 +946,6 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 			tws1 := newTConn(ws1, "WS1")
 			fLog.Debug("Dialled", "id", "WS1", "num", num)
 			conns++
-			// Signal we're ready to ensure the sender connects after
-			if conns == 1 {
-				if err := tws1.swallowIntentMessage("Welcome"); err != nil {
-					t.Fatal(err)
-				}
-				close(listenerReady)
-			}
 
 			// Close the connection after some time, which gets
 			// longer and longer to ensure we do genuinely (eventually)
@@ -986,6 +980,12 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				num = env.Num
 				fLog.Debug("Received", "id", "WS1", "num", num,
 					"intent", env.Intent, "content", string(env.Body))
+				if !gotFirstEnv {
+					fLog.Debug("Listener got first envelope", "id", "WS1")
+					gotFirstEnv = true
+					// Signal to the sender it can start sending
+					close(listenerReady)
+				}
 				if env.Intent == "Peer" {
 					rcvd = append(rcvd, string(env.Body))
 				}
@@ -1007,7 +1007,9 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	}
 
 	// Wait for the listener to be ready
+	fLog.Debug("Sending waiting go", "id", "WS2")
 	<-listenerReady
+	fLog.Debug("Sending going", "id", "WS2")
 
 	// Send some messages
 	fLog.Debug("Sending messages", "id", "WS2", "num", -1)
