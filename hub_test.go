@@ -996,17 +996,21 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	// Send some messages on one connection, up to 50ms apart
 
 	ws2, _, err := dial(serv, game, "WS2", -1)
+	fLog.Debug("Dialled", "id", "WS2", "num", -1)
 	if err != nil {
 		ws2.Close()
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "WS2")
-	fLog.Debug("Dialled", "id", "WS2", "num", -1)
+	if err := tws2.swallowIntentMessage("Welcome"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Wait for the listener to be ready
 	<-listenerReady
 
 	// Send some messages
+	fLog.Debug("Sending messages", "id", "WS2", "num", -1)
 	for i := 0; i < 20; i++ {
 		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 		n := len(sent)
@@ -1018,6 +1022,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 				msg, err.Error(),
 			)
 		}
+		fLog.Debug("Sent message", "id", "WS2", "content", msg)
 		sent = append(sent, msg)
 		tws2.swallowIntentMessage("Receipt")
 	}
