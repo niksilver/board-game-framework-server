@@ -94,9 +94,10 @@ func (h *Hub) receiveInt() {
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
-				// Pass the buffer to the new client
+				// Pass the buffer to the new client and add it to our list
 				c.Buffer.TakeOver(cOld.Buffer)
 				c.Buffer.Set(c.LastNum)
+				h.clients[c] = true
 
 				// Shut down old client
 				h.remove(cOld)
