@@ -361,7 +361,7 @@ func (c *Client) connectedNoUnsent() (bool, bool) {
 				fLog.Debug("WriteJSON error", "err", err)
 				return false, false
 			}
-			fLog.Debug("Wrote JSON", "content", string(m.Env.Body))
+			fLog.Debug("Wrote JSON", "env", niceEnv(m.Env))
 		case <-c.pinger.C:
 			fLog.Debug("Sending ping")
 			if err := c.WS.SetWriteDeadline(
@@ -403,6 +403,7 @@ func (c *Client) disconnected() {
 				continue
 			}
 			// Message needs to go into the buffer
+			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
 			c.Buffer.Add(m.Env)
 		case <-c.pinger.C:
 			fLog.Debug("Got a ping message; ignoring")

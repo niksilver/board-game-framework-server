@@ -35,7 +35,7 @@ func init() {
 
 func main() {
 	// Set the logger -only for when the application runs, as this is in main
-	Log.SetHandler(log15.StdoutHandler)
+	aLog.SetHandler(log15.StdoutHandler)
 
 	// Handle proof of running
 	http.HandleFunc("/", helloHandler)
@@ -49,12 +49,12 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
-		Log.Info("Using default port", "port", port)
+		aLog.Info("Using default port", "port", port)
 	}
 
-	Log.Info("Listening", "port", port)
+	aLog.Info("Listening", "port", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		Log.Crit("ListenAndServe", "error", err)
+		aLog.Crit("ListenAndServe", "error", err)
 		os.Exit(1)
 	}
 }
@@ -66,7 +66,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	clientID := ClientIDOrNew(r.Cookies())
 	ws, err := Upgrade(w, r, clientID)
 	if err != nil {
-		Log.Warn("Upgrade", "error", err)
+		aLog.Warn("Upgrade", "error", err)
 		return
 	}
 
@@ -78,7 +78,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		// The following calls may error, but we're exiting, so will ignore
 		ws.WriteMessage(websocket.CloseMessage, msg)
 		ws.Close()
-		Log.Warn("Superhub rejected client", "path", r.URL.Path)
+		aLog.Warn("Superhub rejected client", "path", r.URL.Path)
 		return
 	}
 
@@ -97,7 +97,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		c.Buffer.Set(num)
 	}
 	c.Start()
-	Log.Info("Connected client", "id", clientID)
+	aLog.Info("Connected client", "id", clientID, "lastnum", num)
 }
 
 // lastNum gets the integer given by the lastnum query parameter,
@@ -126,11 +126,11 @@ func annulCookieHandler(w http.ResponseWriter, r *http.Request) {
 	// Create a websocket connection with an empty cookie
 	ws, err := Upgrade(w, r, "")
 	if err != nil {
-		Log.Warn("Upgrade", "error", err)
+		aLog.Warn("Upgrade", "error", err)
 		return
 	}
 	ws.Close()
-	Log.Info("Annulled cookie")
+	aLog.Info("Annulled cookie")
 }
 
 // Just say hello

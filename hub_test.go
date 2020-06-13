@@ -919,142 +919,75 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	// Connect 2 clients in turn. Each will send messages and
-	// occasionally disconnect and reconnect. Both clients should
-	// still receive all messages.
+	// Connect two clients. One will listen to messages, and
+	// occasionally disconnect and reconnect. The other will send messages.
+	// The first client should receive them all.
 
 	game := "/hub.reconnecting"
+	listener := sync.WaitGroup{}
+	sent, rcvd := []string{}, []string{}
 
-	// Connect, send a few messages, disconnect
-	// Meanwhile we'll receive the messages until there are no more websockets
+	// Listen for messages, allowing up 100ms for any to come through
 
-	sessions := sync.WaitGroup{}
+	listener.Add(1)
+	go func() {
+		defer listener.Done()
 
-	// Send some messages on one connection
-	send := func(tws *tConn, id string, sent *[]string) {
-		rpt := rand.Intn(10)
-		for i := 0; i < rpt; i++ {
-			n := len(*sent)
-			msg := id + "." + strconv.Itoa(n)
-			err := tws.ws.WriteMessage(websocket.BinaryMessage, []byte(msg))
+		num := -1
+		conns := 0
+		for {
+			ws1, _, err := dial(serv, game, "WS1", num)
 			if err != nil {
-				t.Fatalf(
-					"Couldn't write message, n=%d, id=%s error '%s'",
-					n, id, err.Error(),
-				)
-			}
-			*sent = append(*sent, msg)
-			time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
-		}
-	}
-
-	// Run a few sends for a client. When first dialling, we have to
-	// wait for the other client to join before continuing
-	sendMany := func(twsC chan *tConn, id string, num int, sent *[]string,
-		meJoined *semaphore, theyJoined *semaphore) {
-		defer sessions.Done()
-
-		for i := 0; i < 5; i++ {
-			ws, _, err := dial(serv, game, id, num)
-			if err != nil {
-				ws.Close()
+				ws1.Close()
 				t.Fatal(err)
 			}
-			tws := newTConn(ws, id)
-			fLog.Debug("Dialled", "id", id)
-			if !meJoined.isDone() {
-				fLog.Debug("Waiting for Welcome", "id", id)
-				if err := tws.swallowIntentMessage("Welcome"); err != nil {
+			tws1 := newTConn(ws1, "WS1")
+			fLog.Debug("Dialled", "id", "WS1", "num", num)
+			conns++
+			// Wait for the other client
+			tws1.swallowIntentMessage("Joiner")
+
+			// Close the connection after some time, which gets
+			// longer and longer to ensure we do genuinely (eventually)
+			// time out while listening
+			go func() {
+				closeMs := rand.Intn(50 * conns)
+				time.Sleep(time.Duration(closeMs) * time.Millisecond)
+				fLog.Debug("Goroutine closed connection", "id", "WS1")
+				tws1.close()
+			}()
+
+			for {
+				rr, timedOut := tws1.readMessage(250)
+				if timedOut {
+					fLog.Debug("Timed out while reading", "id", "WS1")
+					// Assume no more messages
+					tws1.close()
+					return
+				}
+				if rr.err != nil {
+					// Presume connection is closed
+					fLog.Debug("Read error, presume closed",
+						"id", "WS1", "err", rr.err.Error())
+					tws1.close()
+					break
+				}
+				var env Envelope
+				err := json.Unmarshal(rr.msg, &env)
+				if err != nil {
 					t.Fatal(err)
 				}
+				num = env.Num
+				fLog.Debug("Received", "id", "WS1", "num", num,
+					"intent", env.Intent, "content", string(env.Body))
+				if env.Intent == "Peer" {
+					rcvd = append(rcvd, string(env.Body))
+				}
 			}
-			meJoined.done()
-			theyJoined.wait()
-			twsC <- tws
-			fLog.Debug("Going to send many", "id", id)
-			send(tws, id, sent)
-			tws.close()
-			time.Sleep(time.Duration(rand.Intn(500)) * time.Millisecond)
 		}
-		close(twsC)
-	}
-
-	// Receive messages from one connection
-	receive := func(tws *tConn, id string, num *int, rcvd *[]string) {
-		reads := 0
-		for {
-			rr, timedOut := tws.readMessage(500)
-			if timedOut {
-				fLog.Debug("Timed out while reading", "id", id)
-				tws.close()
-				break
-			}
-			if rr.err != nil {
-				// Presume connection is closed
-				fLog.Debug("Read error, presume closed",
-					"id", id, "reads", reads, "err", rr.err.Error())
-				break
-			}
-			reads++
-			var env Envelope
-			err := json.Unmarshal(rr.msg, &env)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if env.Intent != "Peer" {
-				continue
-			}
-			*rcvd = append(*rcvd, string(env.Body))
-			*num = env.Num
-			fLog.Debug("Received", "content", string(env.Body))
-		}
-	}
-
-	// Receive messages from a series of connections
-	receiveMany := func(twsC chan *tConn, id string, num *int, rcvd *[]string) {
-		defer sessions.Done()
-
-		for {
-			tws, okay := <-twsC
-			if !okay {
-				// No more websockets
-				fLog.Debug("No more websockets", "id", id)
-				break
-			}
-			receive(tws, id, num, rcvd)
-		}
-	}
-
-	// Run a number of send and receives for two clients
-	twsC1 := make(chan *tConn, 5)
-	twsC2 := make(chan *tConn, 5)
-	num1, sent1, rcvd1 := -1, &[]string{}, &[]string{}
-	num2, sent2, rcvd2 := -1, &[]string{}, &[]string{}
-	ws1Joined := newSemaphore()
-	ws2Joined := newSemaphore()
-
-	sessions.Add(2)
-	go sendMany(twsC1, "WS1", num1, sent1, ws1Joined, ws2Joined)
-	go sendMany(twsC2, "WS2", num2, sent2, ws2Joined, ws1Joined)
-	sessions.Add(2)
-	go receiveMany(twsC1, "WS1", &num1, rcvd1)
-	go receiveMany(twsC2, "WS2", &num2, rcvd2)
-	fLog.Debug("Waiting on first sessions")
-	sessions.Wait()
-
-	// Get any remaining messages
-
-	ws1, _, err := dial(serv, game, "WS1", -1)
-	if err != nil {
-		ws1.Close()
-		t.Fatal(err)
-	}
-	tws1 := newTConn(ws1, "WS1")
-	sessions.Add(1)
-	go func() {
-		defer sessions.Done()
-		receive(tws1, "WS1", &num1, rcvd1)
 	}()
+
+	// Send some messages on one connection, up to 50ms apart
 
 	ws2, _, err := dial(serv, game, "WS2", -1)
 	if err != nil {
@@ -1062,13 +995,28 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "WS2")
-	sessions.Add(1)
-	go func() {
-		defer sessions.Done()
-		receive(tws2, "WS2", &num2, rcvd2)
-	}()
-	fLog.Debug("Waiting on second sessions")
-	sessions.Wait()
+	fLog.Debug("Dialled", "id", "WS2", "num", -1)
+	// Wait for the other client
+	tws2.swallowIntentMessage("Joiner")
+	// Send some messages
+	for i := 0; i < 20; i++ {
+		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
+		n := len(sent)
+		msg := "WS2." + strconv.Itoa(n)
+		err := tws2.ws.WriteMessage(websocket.BinaryMessage, []byte(msg))
+		if err != nil {
+			t.Fatalf(
+				"Couldn't write message, msg=%s, error '%s'",
+				msg, err.Error(),
+			)
+		}
+		sent = append(sent, msg)
+		tws2.swallowIntentMessage("Receipt")
+	}
+	tws2.close()
+
+	// Wait for listener to finish
+	listener.Wait()
 
 	// Check what was sent is what was received
 	sliceDiff := func(a []string, b []string) string {
@@ -1093,14 +1041,9 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 		return out
 	}
 
-	if !reflect.DeepEqual(sent1, rcvd2) {
+	if !reflect.DeepEqual(sent, rcvd) {
 		t.Errorf("Sent by ws1 != received by ws2. Sent/received:\n%s",
-			sliceDiff(*sent1, *rcvd2))
-	}
-
-	if !reflect.DeepEqual(sent2, rcvd1) {
-		t.Errorf("Sent by ws2 != received by ws1. Sent/received:\n%s",
-			sliceDiff(*sent2, *rcvd1))
+			sliceDiff(sent, rcvd))
 	}
 
 	fLog.Debug("Waiting on group")

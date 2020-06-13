@@ -186,9 +186,17 @@ func (h *Hub) receiveInt() {
 				}
 
 				caseLog.Debug("Sending receipt")
-				msgR := msg
-				*msgR.Env = *msg.Env
-				msgR.Env.Intent = "Receipt"
+				msgR := &Message{
+					From: c,
+					Env: &Envelope{
+						From:   msg.Env.From,
+						To:     msg.Env.To,
+						Num:    msg.Env.Num,
+						Time:   msg.Env.Time,
+						Intent: "Receipt",
+						Body:   msg.Env.Body,
+					},
+				}
 				c.Pending <- msgR
 
 			default:
