@@ -6,6 +6,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -191,4 +193,18 @@ func (b *Buffer) Stop() {
 	if b.done != nil {
 		b.done <- true
 	}
+}
+
+// String representation of the buffer.
+func (b *Buffer) String() string {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
+	nums := make([]string, len(b.buf))
+	for i, env := range b.buf {
+		nums[i] = strconv.Itoa(env.Num)
+	}
+
+	return "{unsent:" + strconv.Itoa(b.unsent) +
+		",nums:[" + strings.Join(nums, ",") + "]}"
 }
