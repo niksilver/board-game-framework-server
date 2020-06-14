@@ -211,19 +211,38 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 		}
 	}
 
-	// We expect 10 messages to client 2 and client 3
+	// We expect 10 receipts to client 1 and 10 messages to clients 2 and 3
 
 	for i := 0; i < 10; i++ {
+		// Get a message from client 1
+		rr, timedOut := tws1.readMessage(500)
+		if timedOut {
+			t.Fatalf("Timed out reading ws1, i=%d", i)
+		}
+		if rr.err != nil {
+			t.Fatalf("Read error, ws1, i=%d: %s", i, rr.err.Error())
+		}
+		env := Envelope{}
+		err := json.Unmarshal(rr.msg, &env)
+		if err != nil {
+			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
+		}
+		if string(env.Body) != string(msgs[i]) {
+			t.Errorf("ws1, i=%d, received '%s' but expected '%s'",
+				i, env.Body, msgs[i],
+			)
+		}
+
 		// Get a message from client 2
-		rr, timedOut := tws2.readMessage(1000)
+		rr, timedOut = tws2.readMessage(500)
 		if timedOut {
 			t.Fatalf("Timed out reading ws2, i=%d", i)
 		}
 		if rr.err != nil {
 			t.Fatalf("Read error, ws2, i=%d: %s", i, rr.err.Error())
 		}
-		env := Envelope{}
-		err := json.Unmarshal(rr.msg, &env)
+		env = Envelope{}
+		err = json.Unmarshal(rr.msg, &env)
 		if err != nil {
 			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
 		}
@@ -234,7 +253,7 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 		}
 
 		// Get a message from client 3
-		rr, timedOut = tws3.readMessage(1000)
+		rr, timedOut = tws3.readMessage(500)
 		if timedOut {
 			t.Fatalf("Timed out reading ws3, i=%d", i)
 		}
@@ -253,10 +272,10 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 		}
 	}
 
-	// We expect no messages from client 1. It should timeout while waiting
+	// We expect no more messages from client 1. Should timeout while waiting
 
-	tLog.Debug("TestHub_BouncesToOtherClients, expecting no message")
-	err = tws1.expectNoMessage(1000)
+	tLog.Debug("TestHub_BouncesToOtherClients, expecting no more message")
+	err = tws1.expectNoMessage(500)
 	if err != nil {
 		t.Fatalf("Got something while expecting no message: %s", err.Error())
 	}
