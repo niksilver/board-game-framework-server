@@ -162,7 +162,7 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "CL1")
-	if err := tws1.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws1.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1: %s", err)
 	}
 
@@ -292,7 +292,7 @@ func TestHub_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "EN1")
-	if err := tws1.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws1.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1: %s", err)
 	}
 
@@ -504,7 +504,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "JM1")
-	if err := tws1.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws1.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1: %s", err)
 	}
 
@@ -515,7 +515,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "JM2")
-	if err := tws2.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws2.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws2: %s", err)
 	}
 
@@ -561,7 +561,7 @@ func TestHub_JoinerMessagesHappen(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws3 := newTConn(ws3, "JM3")
-	if err := tws3.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws3.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for tws3: %s", err)
 	}
 
@@ -650,7 +650,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "LV1")
-	if err := tws1.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws1.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1: %s", err)
 	}
 
@@ -1002,7 +1002,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "WS2")
-	if err := tws2.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws2.swallow("Welcome"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1026,7 +1026,7 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 		}
 		fLog.Debug("Sent message", "id", "WS2", "content", msg)
 		sent = append(sent, msg)
-		tws2.swallowIntentMessage("Receipt")
+		tws2.swallow("Receipt")
 	}
 	tws2.close()
 

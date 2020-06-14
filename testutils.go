@@ -207,13 +207,13 @@ func (c *tConn) close() {
 	uLog.Debug("tConn.close, exiting", "id", c.id)
 }
 
-// swallowIntentMessage expects the next message to be of the given intent.
+// swallow expects the next message to be of the given intent.
 // It returns an error if not, or if it gets an error.
 // It will only wait 500 ms to read any message.
 // If there's an error, then future reads must be from the `tConn`,
 // not the `websocket.Conn`, because a "timed out" error will mean there
 // is still a read operation pending, and the `tConn` can handle that.
-func (ws *tConn) swallowIntentMessage(intent string) error {
+func (ws *tConn) swallow(intent string) error {
 	var env Envelope
 	rr, timedOut := ws.readMessage(500)
 	if timedOut {
@@ -250,7 +250,7 @@ type intentExp struct {
 // is still a read operation pending, and the `tConn` can handle that.
 func swallowMany(exps ...intentExp) error {
 	for _, exp := range exps {
-		err := exp.ws.swallowIntentMessage(exp.intent)
+		err := exp.ws.swallow(exp.intent)
 		if err != nil {
 			return fmt.Errorf("%s: %s", exp.desc, err.Error())
 		}

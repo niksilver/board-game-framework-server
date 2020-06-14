@@ -82,7 +82,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		// The following calls may error, but we're exiting, so will ignore
 		ws.WriteMessage(websocket.CloseMessage, msg)
 		ws.Close()
-		aLog.Warn("Superhub rejected client", "path", r.URL.Path)
+		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err)
 		return
 	}
 

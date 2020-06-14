@@ -212,7 +212,7 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 
 	// Wait for the client to have connected, and swallow the "Welcome"
 	// message
-	if err := tws.swallowIntentMessage("Welcome"); err != nil {
+	if err := tws.swallow("Welcome"); err != nil {
 		t.Fatal(err)
 	}
 
