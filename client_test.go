@@ -151,9 +151,18 @@ func TestClient_SendsPings(t *testing.T) {
 	pingFreq = 500 * time.Millisecond
 	pings := 0
 
+	// We'll also lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+
+	// Start a server
 	serv := newTestServer(bounceHandler)
+
+	// Make sure we tidy up after
 	defer func() {
 		pingFreq = oldPingFreq
+		reconnectionTimeout = oldReconnectionTimeout
 		serv.Close()
 	}()
 
