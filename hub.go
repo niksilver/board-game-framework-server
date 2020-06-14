@@ -18,6 +18,8 @@ type Hub struct {
 	num int
 	// Messages from clients that need to be bounced out.
 	Pending chan *Message
+	// Buffer of recent envelopes, in case they need to be resent
+	buffer *Buffer
 	// For the superhub to say there will be no more joiners
 	Detached chan bool
 	// For the hub to note to itself it's acknowledged the detachement
@@ -51,6 +53,7 @@ func NewHub() *Hub {
 		clients: make(map[*Client]bool),
 		num:     0,
 		Pending: make(chan *Message),
+		buffer:  NewBuffer(),
 		// Channel size 1 so the superhub doesn't block
 		Detached: make(chan bool, 1),
 		// For the hub to note to itself it's acknowledged the detachement
@@ -88,18 +91,16 @@ func (h *Hub) receiveInt() {
 			switch {
 			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
-				h.other(msg.From).Buffer.Save(msg.From.Num):
-				// msg.From.Buffer.Save(msg.From.Num):
+				h.buffer.Available(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
-				// The new client's initial buffer can only come from the old
+				// Give the new client its initial queue to kick it off
 				// client, because it knows when it's ready
-				msg.Env.Intent = "PassBuffer"
-				cOld.Pending <- msg
+				cOld.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 
 				// Add the client to our list
 				h.clients[c] = true
@@ -108,7 +109,7 @@ func (h *Hub) receiveInt() {
 				h.remove(cOld)
 
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) != nil:
-				// New client for old ID, but no request to take over
+				// New client for old ID, but won't take over
 				c := msg.From
 				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
@@ -117,14 +118,15 @@ func (h *Hub) receiveInt() {
 				caseLog.Debug("Sending leaver messages")
 				h.num++
 				h.leaver(cOld)
+				h.buffer.Remove(cOld.ID)
 
 				caseLog.Debug("Sending joiner messages")
 				h.num++
 				h.joiner(c)
 
-				// Set the new client going with the correct buffer, send it
+				// Set the new client going with an empty queue, send it
 				// a welcome message, and add it to our client list
-				c.InitialBuffer <- NewBuffer()
+				c.InitialQueue <- NewQueue()
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
 				h.clients[c] = true
@@ -139,9 +141,9 @@ func (h *Hub) receiveInt() {
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
 
-				// Set the new client going with the correct buffer, send it
+				// Set the new client going with an empty queue, send it
 				// a welcome message, and add it to our client list
-				c.InitialBuffer <- NewBuffer()
+				c.InitialQueue <- NewQueue()
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
 				h.clients[c] = true
@@ -171,6 +173,7 @@ func (h *Hub) receiveInt() {
 				// Tell the client it will receive no more messages and
 				// forget about it
 				h.remove(c)
+				h.buffer.Remove(c.ID)
 
 				// Send a leaver message to remaining clients
 				h.num++
@@ -194,6 +197,7 @@ func (h *Hub) receiveInt() {
 				caseLog.Debug("Sending peer messages")
 				for _, cl := range toCls {
 					caseLog.Debug("Sending peer msg", "tocid", cl.ID)
+					h.buffer.Add(cl.ID, msg.Env)
 					cl.Pending <- msg
 				}
 
@@ -209,12 +213,14 @@ func (h *Hub) receiveInt() {
 						Body:   msg.Env.Body,
 					},
 				}
+				h.buffer.Add(c.ID, msgR.Env)
 				c.Pending <- msgR
 
 			default:
 				// Should never get here
 				panic(fmt.Sprintf("Got inexplicable msg: %#v", msg))
 			}
+			h.buffer.Clean()
 		}
 
 	}
@@ -228,7 +234,7 @@ func (h *Hub) remove(c *Client) {
 
 // welcome sends a Welcome message to just this client.
 func (h *Hub) welcome(c *Client) {
-	c.Pending <- &Message{
+	msg := &Message{
 		From:  c,
 		MType: websocket.BinaryMessage,
 		Env: &Envelope{
@@ -239,6 +245,8 @@ func (h *Hub) welcome(c *Client) {
 			Intent: "Welcome",
 		},
 	}
+	h.buffer.Add(c.ID, msg.Env)
+	c.Pending <- msg
 }
 
 // joiner sends a Joiner message to all clients, about joiner c.
@@ -256,6 +264,7 @@ func (h *Hub) joiner(c *Client) {
 	}
 
 	for cl, _ := range h.clients {
+		h.buffer.Add(cl.ID, msg.Env)
 		cl.Pending <- msg
 	}
 }
@@ -274,6 +283,7 @@ func (h *Hub) leaver(c *Client) {
 		},
 	}
 	for cl, _ := range h.clients {
+		h.buffer.Add(cl.ID, msg.Env)
 		cl.Pending <- msg
 	}
 }

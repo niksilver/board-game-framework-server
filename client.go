@@ -40,10 +40,10 @@ type Client struct {
 	// Don't close the websocket directly. That's managed internally.
 	WS  *websocket.Conn
 	Hub *Hub
-	// Buffer of messages received, in case they need to be resent.
-	Buffer *Buffer
-	// Channel to receive the initial buffer
-	InitialBuffer chan *Buffer
+	// Queue of older messages
+	queue *Queue
+	// Channel to receive the initial queue
+	InitialQueue chan *Queue
 	// To receive internal message from the hub. The hub will close it
 	// once it knows the client wants to stop.
 	Pending chan *Message
@@ -226,18 +226,16 @@ func (c *Client) sendExt() {
 	connected := true
 	shutdown := false
 
-	// Wait for the initial buffer before choosing the first scenario
-	c.Buffer = <-c.InitialBuffer
-	c.Buffer.Set(c.Num)
-	c.Buffer.Start()
+	// Wait for the initial queue before choosing the first scenario
+	c.queue = <-c.InitialQueue
 
-	if connected && c.Buffer.HasUnsent() {
-		fLog.Debug("Scenario: connected, unsent envelopes")
-		connected, shutdown = c.connectedWithUnsent()
+	if connected && !c.queue.Empty() {
+		fLog.Debug("Scenario: connected, queued envelopes")
+		connected, shutdown = c.connectedWithQueued()
 	}
-	if !shutdown && connected && !c.Buffer.HasUnsent() {
-		fLog.Debug("Scenario: connected, no unsent envelopes")
-		connected, shutdown = c.connectedNoUnsent()
+	if !shutdown && connected && c.queue.Empty() {
+		fLog.Debug("Scenario: connected, no queued envelopes")
+		connected, shutdown = c.connectedNoneQueued()
 	}
 	if !shutdown && !connected {
 		fLog.Debug("Scenario: disconnected")
@@ -250,7 +248,6 @@ func (c *Client) sendExt() {
 	fLog.Debug("Closing conn")
 	c.WS.Close()
 	c.pinger.Stop()
-	c.Buffer.Stop()
 	fLog.Debug("Waiting for channel close")
 	for {
 		if _, ok := <-c.Pending; !ok {
@@ -263,10 +260,10 @@ func (c *Client) sendExt() {
 	Shub.Release(c.Hub)
 }
 
-// connectedWithUnsent is for processing messages from the hub while
+// connectedWithQueued is for processing messages from the hub while
 // sending messages from the queue. Returns connected flag and shutdown flag.
-func (c *Client) connectedWithUnsent() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedWithUnsent",
+func (c *Client) connectedWithQueued() (bool, bool) {
+	fLog := aLog.New("fn", "client.connectedWithQueued",
 		"id", c.ID, "ref", c.Ref)
 
 	// Keep receiving internal messages
@@ -285,17 +282,9 @@ func (c *Client) connectedWithUnsent() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
-			if m.Env.Intent == "PassBuffer" {
-				// This message is for us, but it's not expected here
-				fLog.Warn("Passing buffer while connected!", "newcref", m.From.Ref)
-				newBuffer := NewBuffer()
-				newBuffer.TakeOver(c.Buffer)
-				m.From.InitialBuffer <- newBuffer
-				return true, true
-			}
-			// Message needs to go into the buffer
-			fLog.Debug("Added to buffer", "env", niceEnv(m.Env))
-			c.Buffer.Add(m.Env)
+			// Message needs to go onto the queue
+			fLog.Debug("Adding to queue", "env", niceEnv(m.Env))
+			c.queue.Add(m.Env)
 
 		case <-c.pinger.C:
 			fLog.Debug("Sending ping")
@@ -312,13 +301,13 @@ func (c *Client) connectedWithUnsent() (bool, bool) {
 				return false, false
 			}
 		default:
-			fLog.Debug("Sending envelope from buffer")
-			env, err := c.Buffer.Next()
+			fLog.Debug("Sending envelope from queue")
+			env, err := c.queue.Get()
 			if err != nil {
-				fLog.Debug("Problem getting next", "err", err.Error())
+				fLog.Debug("Problem getting envelope", "err", err.Error())
 				return false, true
 			}
-			fLog.Debug("Envelope okay", "env", niceEnv(env))
+			fLog.Debug("Got queued envelope okay", "env", niceEnv(env))
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
@@ -332,18 +321,18 @@ func (c *Client) connectedWithUnsent() (bool, bool) {
 			}
 			// Send was okay
 			fLog.Debug("Sent okay")
-			if !c.Buffer.HasUnsent() {
-				fLog.Debug("Buffer has no unsent; reselecting scenario")
+			if c.queue.Empty() {
+				fLog.Debug("Queue is empty; reselecting scenario")
 				return true, false
 			}
 		}
 	}
 }
 
-// connectedNoUnsent is for processing messages from the hub when
-// the buffer has no unsent envelopes. Returns connected and shutdown flags.
-func (c *Client) connectedNoUnsent() (bool, bool) {
-	fLog := aLog.New("fn", "client.connectedNoUnsent", "id", c.ID, "c", c.Ref)
+// connectedNoneQueued is for processing messages from the hub when
+// the queue is empty. Returns connected and shutdown flags.
+func (c *Client) connectedNoneQueued() (bool, bool) {
+	fLog := aLog.New("fn", "client.connectedNoneQueued", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -360,17 +349,8 @@ func (c *Client) connectedNoUnsent() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
-			if m.Env.Intent == "PassBuffer" {
-				// This message is for us, but it's not expected here
-				fLog.Warn("Passing buffer while connected!", "newcref", m.From.Ref)
-				newBuffer := NewBuffer()
-				newBuffer.TakeOver(c.Buffer)
-				m.From.InitialBuffer <- newBuffer
-				return true, true
-			}
 			// We should send this message
 			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
-			c.Buffer.Add(m.Env)
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
@@ -401,9 +381,9 @@ func (c *Client) connectedNoUnsent() (bool, bool) {
 	}
 }
 
-// disconnected is for processing messages from the hub in the hope
-// that we'll get a reconnection in time. Returns when the pending
-// channel closes.
+// disconnected is just to stay alive until receiveExt signals
+// the reconnection wait has timed out.
+// Returns when the pending channel closes.
 func (c *Client) disconnected() {
 	fLog := aLog.New("fn", "client.disconnected", "id", c.ID, "c", c.Ref)
 
@@ -418,22 +398,8 @@ func (c *Client) disconnected() {
 				fLog.Debug("Channel closed")
 				return
 			}
-			if m.Env.Intent == "LostConnection" {
-				// This message is for us
-				fLog.Debug("Got LostConnection while disconnected")
-				continue
-			}
-			if m.Env.Intent == "PassBuffer" {
-				// This message is for us
-				fLog.Debug("Passing buffer and exiting", "newcref", m.From.Ref)
-				newBuffer := NewBuffer()
-				newBuffer.TakeOver(c.Buffer)
-				m.From.InitialBuffer <- newBuffer
-				return
-			}
-			// Message needs to go into the buffer
-			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
-			c.Buffer.Add(m.Env)
+			// Ignore actual messages
+			fLog.Debug("Ignoring envelope", "env", niceEnv(m.Env))
 		case <-c.pinger.C:
 			fLog.Debug("Got a ping message; ignoring")
 		}
