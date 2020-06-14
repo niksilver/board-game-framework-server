@@ -232,11 +232,10 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 }
 
 // It might be that when a client joins there is already a client with
-// the same ID in the game. This will happen if the same user opens another
-// browser to the same game, and hence reuses the ID cookie.
-// In this case the From and To fields in both welcome and joiner envelopes
-// will contain duplicates.
-func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
+// the same ID in the game.
+// In this case the original client should be kicked out (and a Leaver
+// message sent) and the new client should be treated as a new joiner.
+func TestClient_IfDuplicateIDConnectsPreviousClientEjected(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
@@ -280,17 +279,51 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 	}
 	tws2b := newTConn(ws2b, "DUP2(b)")
 
-	// The first client should get a joiner message from the second
-	// client (again). It should see the ID in the To and From fields.
+	// The first client should get a leaver message about 2a and a joiner
+	// message about 2b.  It should see the ID in the From field only.
 	rr, timedOut := tws1.readMessage(500)
 	if timedOut {
 		t.Fatal("Timed out reading message from ws1")
 	}
+	if rr.err != nil {
+		t.Fatal(err)
+	}
+
+	// Unwrap the first message and check it
+	env := Envelope{}
+	err = json.Unmarshal(rr.msg, &env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Unwrap the message and check it
-	env := Envelope{}
+	if env.Intent != "Leaver" {
+		t.Errorf(
+			"ws1: Message intent was '%s' but expected 'Leaver'", env.Intent,
+		)
+	}
+	if !sameElements(env.From, []string{"DUP2"}) {
+		t.Errorf(
+			"ws1: Message From field was %v but expected [DUP2]",
+			env.From,
+		)
+	}
+	if !sameElements(env.To, []string{"DUP1"}) {
+		t.Errorf(
+			"ws1: Message To field was %v but expected [DUP1]",
+			env.From,
+		)
+	}
+
+	// Read the second message
+	rr, timedOut = tws1.readMessage(500)
+	if timedOut {
+		t.Fatal("Timed out reading message from ws1")
+	}
+	if rr.err != nil {
+		t.Fatal(err)
+	}
+
+	// Unwrap the second message and check it
+	env = Envelope{}
 	err = json.Unmarshal(rr.msg, &env)
 	if err != nil {
 		t.Fatal(err)
@@ -306,53 +339,29 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 			env.From,
 		)
 	}
-	if !sameElements(env.To, []string{"DUP1", "DUP2"}) {
+	if !sameElements(env.To, []string{"DUP1"}) {
 		t.Errorf(
-			"ws1: Message To field was %v but expected [DUP1, DUP2]",
+			"ws1: Message To field was %v but expected [DUP1]",
 			env.From,
 		)
 	}
 
-	// The second client should get a joiner message from the second
-	// client. It should see its ID in the To and From fields.
+	// The second client should get disconnected.
 	rr, timedOut = tws2a.readMessage(500)
 	if timedOut {
-		t.Fatal("Timed out reading message from ws2")
+		t.Fatal("Timed out reading message from ws2a")
 	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Unwrap the message and check it
-	env = Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env.Intent != "Joiner" {
-		t.Errorf(
-			"ws2: Message intent was '%s' but expected 'Joiner'", env.Intent,
-		)
-	}
-	if !sameElements(env.From, []string{"DUP2"}) {
-		t.Errorf(
-			"ws2: Message From field was %v but expected [DUP2]",
-			env.From,
-		)
-	}
-	if !sameElements(env.To, []string{"DUP1", "DUP2"}) {
-		t.Errorf(
-			"ws2: Message To field was %v but expected [DUP1, DUP2]",
-			env.From,
-		)
+	if rr.err == nil {
+		t.Errorf("Expected error reading 2a, but got response with message %v", string(rr.msg))
 	}
 
 	// The third client should get a welcome message.
-	// It should see its ID in the To and From fields.
+	// It should see its ID in the To and the other client in the From field.
 	rr, timedOut = tws2b.readMessage(500)
 	if timedOut {
-		t.Fatal("Timed out reading message from ws2")
+		t.Fatal("Timed out reading message from ws2b")
 	}
-	if err != nil {
+	if rr.err != nil {
 		t.Fatal(err)
 	}
 	// Unwrap the message and check it
@@ -363,18 +372,18 @@ func TestClient_DuplicateIDsInFromAndToIfClientJoinsTwice(t *testing.T) {
 	}
 	if env.Intent != "Welcome" {
 		t.Errorf(
-			"ws3: Message intent was '%s' but expected 'Welcome'", env.Intent,
+			"ws2b message intent was '%s' but expected 'Welcome'", env.Intent,
 		)
 	}
-	if !sameElements(env.From, []string{"DUP1", "DUP2"}) {
+	if !sameElements(env.From, []string{"DUP1"}) {
 		t.Errorf(
-			"ws3: Message From field was %v but expected [DUP1,DUP2]",
+			"ws2b message From field was %v but expected [DUP1]",
 			env.From,
 		)
 	}
 	if !sameElements(env.To, []string{"DUP2"}) {
 		t.Errorf(
-			"ws3: Message To field was %v but expected [DUP2]",
+			"ws2b message To field was %v but expected [DUP2]",
 			env.From,
 		)
 	}

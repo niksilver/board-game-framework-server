@@ -113,21 +113,20 @@ func (h *Hub) receiveInt() {
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client for old, no lastnum", "oldcref", cOld.Ref)
 				h.remove(cOld)
-				h.num++
 				caseLog.Debug("Sending leaver messages")
+				h.num++
 				h.leaver(cOld)
 
-				h.num++
 				caseLog.Debug("Sending joiner messages")
+				h.num++
 				h.joiner(c)
 
-				// Add the client to our list and set it going with the
-				// correct buffer
-				h.clients[c] = true
+				// Set the new client going with the correct buffer, send it
+				// a welcome message, and add it to our client list
 				c.InitialBuffer <- NewBuffer()
-
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
+				h.clients[c] = true
 
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
