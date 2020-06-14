@@ -997,6 +997,16 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	fLog := tLog.New("fn", "TestHub_ReconnectingClientsDontMissMessages")
 	fLog.Debug("Entering")
 
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
@@ -1144,4 +1154,10 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 
 	fLog.Debug("Waiting on group")
 	WG.Wait()
+}
+
+// If a client connects with an existing ID for which there's an old
+// client, but it's expecting a message num that's not there, then
+// it should be treated as new client, and the old one should be ejected.
+func TestHub_ReconnectionWithBadUnsentBecomesNewJoiner(t *testing.T) {
 }
