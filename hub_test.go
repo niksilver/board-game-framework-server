@@ -999,7 +999,6 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
-
 	oldReconnectionTimeout := reconnectionTimeout
 	reconnectionTimeout = 250 * time.Millisecond
 	defer func() {
@@ -1160,4 +1159,117 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 // client, but it's expecting a message num that's not there, then
 // it should be treated as new client, and the old one should be ejected.
 func TestHub_ReconnectionWithBadUnsentBecomesNewJoiner(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect the first client
+	game := "/hub.reconn.bad.unsent"
+	ws1a, _, err := dial(serv, game, "REC1", -1)
+	defer ws1a.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1a := newTConn(ws1a, "REC1")
+	if err := tws1a.swallow("Welcome"); err != nil {
+		t.Fatalf("Welcome error for ws1a: %s", err)
+	}
+
+	// Connect the second client
+	ws2, _, err := dial(serv, game, "REC2", -1)
+	defer ws2.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws2 := newTConn(ws2, "REC2")
+	if err := tws2.swallow("Welcome"); err != nil {
+		t.Fatalf("Welcome error for ws2: %s", err)
+	}
+
+	// The first client should get a joiner message. Record the envelope num
+
+	rr, timedOut := tws1a.readMessage(250)
+	if timedOut {
+		t.Fatal("ws1a timed out listening for Joiner message")
+	}
+	if rr.err != nil {
+		t.Fatalf("ws1a got error listening for Joiner: %s", err.Error())
+	}
+	env := Envelope{}
+	err = json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		t.Fatalf("ws1a got error unmarshalling: %s", err.Error())
+	}
+	num := env.Num
+
+	// We'll connect a replacement for ws1a with a lastnum of something that
+	// doesn't exist. It should get a Welcome message
+	ws1b, _, err := dial(serv, game, "REC1", num+10)
+	defer ws1b.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1b := newTConn(ws1b, "REC1")
+	if err := tws1b.swallow("Welcome"); err != nil {
+		t.Fatalf("Welcome error for ws1b: %s", err)
+	}
+
+	// Meanwhile ws1a should be ejected
+	rr, timedOut = tws1a.readMessage(250)
+	if timedOut {
+		t.Fatal("ws1a timed out when expecting to be closed")
+	}
+	if rr.err == nil {
+		t.Errorf("ws1a: No error but expected connection closed. rr.msg is %s", string(rr.msg))
+	}
+
+	// ws2 should get a Leaver and then a Joiner
+	rr, timedOut = tws2.readMessage(250)
+	if timedOut {
+		t.Fatal("ws2 timed out listening for Leaver message")
+	}
+	if rr.err != nil {
+		t.Fatalf("ws2 got error listening for Leaver: %s", err.Error())
+	}
+	err = json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		t.Fatalf("ws2 got error unmarshalling: %s", err.Error())
+	}
+	if env.Intent != "Leaver" {
+		t.Errorf("ws2 expected Leaver intent but got %s", env.Intent)
+	}
+	if !sameElements(env.From, []string{"REC1"}) {
+		t.Errorf("ws2 got leaver From %v but expected [REC1]", env.From)
+	}
+	if !sameElements(env.To, []string{"REC2"}) {
+		t.Errorf("ws2 got leaver To %v but expected [REC2]", env.To)
+	}
+	rr, timedOut = tws2.readMessage(250)
+	if timedOut {
+		t.Fatal("ws2 timed out listening for Joiner message")
+	}
+	if rr.err != nil {
+		t.Fatalf("ws2 got error listening for Joiner: %s", err.Error())
+	}
+	err = json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		t.Fatalf("ws2 got error unmarshalling: %s", err.Error())
+	}
+	if env.Intent != "Joiner" {
+		t.Errorf("ws2 expected Joiner intent but got %s", env.Intent)
+	}
+	if !sameElements(env.From, []string{"REC1"}) {
+		t.Errorf("ws2 got joiner From %v but expected [REC1]", env.From)
+	}
+	if !sameElements(env.To, []string{"REC2"}) {
+		t.Errorf("ws2 got joiner To %v but expected [REC2]", env.To)
+	}
 }

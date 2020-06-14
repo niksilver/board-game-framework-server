@@ -21,6 +21,7 @@ type Buffer struct {
 	mx        sync.Mutex
 	cleaning  bool      // If periodic or one-off cleaning is in progress
 	done      chan bool // Or nil if periodic cleaning not started
+	save      int       // Num to save from cleaning
 }
 
 // NewBuffer creates a new buffer with no unsent messages
@@ -31,6 +32,7 @@ func NewBuffer() *Buffer {
 		mx:        sync.Mutex{},
 		cleaning:  false,
 		done:      nil,
+		save:      -1,
 	}
 }
 
@@ -100,19 +102,15 @@ func (b *Buffer) TakeOver(old *Buffer) {
 
 // Start a goroutine to periodically clean the buffer
 func (b *Buffer) Start() {
-	fLog := aLog.New("fn", "buffer.Start", "ref", &b)
 	// Only start once at a time
 	if !b.trySetPeriodicCleaning() {
 		return
 	}
 
 	WG.Add(1)
-	fLog.Debug("Started cleaning", "b.done", b.done)
 	go func() {
 		defer WG.Done()
-		defer fLog.Debug("Done buffer 2")
 		defer b.unsetCleaning()
-		defer fLog.Debug("Done buffer 1")
 
 		tickC := time.Tick(reconnectionTimeout / 4)
 	cleaning:
@@ -178,13 +176,14 @@ func (b *Buffer) Clean() {
 
 // The real cleaning process
 func (b *Buffer) cleanReal() {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
 	keep := time.Now().Add(reconnectionTimeout * -11 / 10)
 	keepMs := keep.UnixNano() / 1_000_000
 	for i := range b.buf {
-		if b.buf[i].Time >= keepMs {
-			b.mx.Lock()
+		if b.buf[i].Time >= keepMs || b.buf[i].Num == b.save {
 			b.buf = b.buf[i:]
-			b.mx.Unlock()
 			break
 		}
 	}
@@ -194,12 +193,26 @@ func (b *Buffer) cleanReal() {
 func (b *Buffer) Stop() {
 	b.mx.Lock()
 	defer b.mx.Unlock()
-	fLog := aLog.New("fn", "buffer.Stop", "ref", &b)
-	fLog.Debug("Stopping buffer", "b.done", b.done)
+
 	if b.done != nil {
-		fLog.Debug("Sending stop for buffer")
 		b.done <- true
 	}
+}
+
+// Save a message from being cleaned. Returns true if the message is
+// in the buffer, and then it won't be cleaned (and nor will later
+// messages). False otherwise.
+func (b *Buffer) Save(num int) bool {
+	b.mx.Lock()
+	defer b.mx.Unlock()
+
+	b.save = -1
+	for _, env := range b.buf {
+		if env.Num == num {
+			b.save = num
+		}
+	}
+	return (b.save == num)
 }
 
 // String representation of the buffer.

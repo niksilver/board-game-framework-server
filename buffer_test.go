@@ -254,3 +254,88 @@ func TestBuffer_CleaningEdgeCases(t *testing.T) {
 	buf5.Stop()
 	WG.Wait()
 }
+
+func TestBuffer_SaveFailCases(t *testing.T) {
+	// Save with empty buffer should fail
+	buf := NewBuffer()
+	if buf.Save(10) == true {
+		t.Error("Should not have been able to save with empty buffer")
+	}
+
+	// Save for message that's been cleaned should fail
+	buf.Add(&Envelope{
+		Num:    1001,
+		Intent: "intent_1001",
+	})
+	buf.Add(&Envelope{
+		Num:    1002,
+		Intent: "intent_1002",
+	})
+	buf.Add(&Envelope{
+		Num:    1003,
+		Intent: "intent_1003",
+	})
+	if buf.Save(1000) == true {
+		t.Error("Should not have been able to save cleaned message")
+	}
+
+	// Save for message that's not yet arrived should fail
+	if buf.Save(1005) == true {
+		t.Error("Should not have been able to save message that's not there")
+	}
+}
+
+func TestBuffer_SaveSuccessFollowedByOneOffClean(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 100 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Simply saving a message that's there should be okay, and it
+	// shouldn't get cleaned up, even if Clean() is called
+
+	buf := NewBuffer()
+	now := time.Now().UnixNano() / 1_000_000
+	buf.Add(&Envelope{
+		Num:    1001,
+		Time:   now,
+		Intent: "intent_1001",
+	})
+	buf.Add(&Envelope{
+		Num:    1002,
+		Time:   now,
+		Intent: "intent_1002",
+	})
+	buf.Add(&Envelope{
+		Num:    1003,
+		Time:   now,
+		Intent: "intent_1003",
+	})
+	buf.Add(&Envelope{
+		Num:    1004,
+		Time:   now,
+		Intent: "intent_1004",
+	})
+	if buf.Save(1002) == false {
+		t.Error("Should have been able to save message")
+	}
+
+	// This would ordinarily clean all the above, but 1002 onwards should
+	// be saved
+	time.Sleep(2 * reconnectionTimeout)
+	buf.Clean()
+	buf.Set(1002)
+	_, err := buf.Next()
+	if err != nil {
+		t.Error("Should have been able to get saved message")
+	}
+	buf.Set(1001)
+	_, err = buf.Next()
+	if err == nil {
+		t.Error("Message before saved message should have been cleaned")
+	}
+}
