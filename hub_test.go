@@ -73,6 +73,16 @@ func TestHub_SendsWelcome(t *testing.T) {
 }
 
 func TestHub_WelcomeIsFromExistingClients(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
