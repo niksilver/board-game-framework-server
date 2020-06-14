@@ -213,14 +213,13 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 
 	// We expect 10 receipts to client 1 and 10 messages to clients 2 and 3
 
-	for i := 0; i < 10; i++ {
-		// Get a message from client 1
-		rr, timedOut := tws1.readMessage(500)
+	testMessage := func(tws *tConn, twsName string, intent string, i int) {
+		rr, timedOut := tws.readMessage(500)
 		if timedOut {
-			t.Fatalf("Timed out reading ws1, i=%d", i)
+			t.Fatalf("Timed out reading %s, i=%d", twsName, i)
 		}
 		if rr.err != nil {
-			t.Fatalf("Read error, ws1, i=%d: %s", i, rr.err.Error())
+			t.Fatalf("Read error, %s, i=%d: %s", twsName, i, rr.err.Error())
 		}
 		env := Envelope{}
 		err := json.Unmarshal(rr.msg, &env)
@@ -228,48 +227,31 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
 		}
 		if string(env.Body) != string(msgs[i]) {
-			t.Errorf("ws1, i=%d, received '%s' but expected '%s'",
-				i, env.Body, msgs[i],
+			t.Errorf("%s, i=%d, received '%s' but expected '%s'",
+				twsName, i, env.Body, msgs[i],
 			)
 		}
+		if env.Intent != intent {
+			t.Errorf("%s, i=%d, got intent '%s' but expected '%s'",
+				twsName, i, env.Intent, intent,
+			)
+		}
+		if !sameElements(env.From, []string{"CL1"}) {
+			t.Errorf("%s, i=%d, got From %v but expected [CL1]",
+				twsName, i, env.From,
+			)
+		}
+		if !sameElements(env.To, []string{"CL2", "CL3"}) {
+			t.Errorf("%s, i=%d, got To %v but expected [CL2, CL3]",
+				twsName, i, env.To,
+			)
+		}
+	}
 
-		// Get a message from client 2
-		rr, timedOut = tws2.readMessage(500)
-		if timedOut {
-			t.Fatalf("Timed out reading ws2, i=%d", i)
-		}
-		if rr.err != nil {
-			t.Fatalf("Read error, ws2, i=%d: %s", i, rr.err.Error())
-		}
-		env = Envelope{}
-		err = json.Unmarshal(rr.msg, &env)
-		if err != nil {
-			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
-		}
-		if string(env.Body) != string(msgs[i]) {
-			t.Errorf("ws2, i=%d, received '%s' but expected '%s'",
-				i, env.Body, msgs[i],
-			)
-		}
-
-		// Get a message from client 3
-		rr, timedOut = tws3.readMessage(500)
-		if timedOut {
-			t.Fatalf("Timed out reading ws3, i=%d", i)
-		}
-		if rr.err != nil {
-			t.Fatalf("Read error, ws3, i=%d: %s", i, rr.err.Error())
-		}
-		env = Envelope{}
-		err = json.Unmarshal(rr.msg, &env)
-		if err != nil {
-			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
-		}
-		if string(env.Body) != string(msgs[i]) {
-			t.Errorf("ws3, i=%d, received '%s' but expected '%s'",
-				i, env.Body, msgs[i],
-			)
-		}
+	for i := 0; i < 10; i++ {
+		testMessage(tws1, "tws1", "Receipt", i)
+		testMessage(tws2, "tws3", "Peer", i)
+		testMessage(tws3, "tws3", "Peer", i)
 	}
 
 	// We expect no more messages from client 1. Should timeout while waiting
