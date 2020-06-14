@@ -23,6 +23,15 @@ func TestSuperhub_LotsOfActivityEndsWithEmptySuperHub(t *testing.T) {
 	cSlice := make([]string, 0)
 	consumed := 0
 
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	// Start a web server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
