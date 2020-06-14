@@ -900,6 +900,15 @@ func TestHub_NonReadingClientsDontBlock(t *testing.T) {
 	max := 10
 	twss := make([]*tConn, max)
 
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	// Start a web server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
