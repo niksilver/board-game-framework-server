@@ -138,13 +138,12 @@ func (h *Hub) receiveInt() {
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
 
-				// Add the client to our list and tell it it's set up okay
-				h.clients[c] = true
+				// Set the new client going with the correct buffer, send it
+				// a welcome message, and add it to our client list
 				c.InitialBuffer <- NewBuffer()
-
-				// Send welcome message to joiner
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
+				h.clients[c] = true
 
 			case msg.Env.Intent == "LostConnection":
 				// A client receiver has lost the connection
