@@ -813,6 +813,15 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 }
 
 func TestHub_SendsErrorOverMaximumClients(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	// Our expected maximum clients
 	twss := make([]*tConn, MaxClients)
 
