@@ -226,9 +226,18 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 	oldPongTimeout := pongTimeout
 	pongTimeout = 500 * time.Millisecond
 
+	// Lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+
+	// Start a server
 	serv := newTestServer(bounceHandler)
+
+	// Tidy up after
 	defer func() {
 		pongTimeout = oldPongTimeout
+		reconnectionTimeout = oldReconnectionTimeout
 		serv.Close()
 	}()
 
