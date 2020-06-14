@@ -254,14 +254,6 @@ func TestHub_BouncesToOtherClients(t *testing.T) {
 		testMessage(tws3, "tws3", "Peer", i)
 	}
 
-	// We expect no more messages from client 1. Should timeout while waiting
-
-	tLog.Debug("TestHub_BouncesToOtherClients, expecting no more message")
-	err = tws1.expectNoMessage(500)
-	if err != nil {
-		t.Fatalf("Got something while expecting no message: %s", err.Error())
-	}
-
 	// Tidy up and check everything in the main app finishes
 	tLog.Debug("TestHub_BouncesToOtherClients, closing off")
 	tws1.close()
@@ -639,6 +631,15 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	// Connect 3 clients in turn. When one leaves the remaining
 	// ones should get leaver messages.
 
@@ -685,6 +686,7 @@ func TestHub_LeaverMessagesHappen(t *testing.T) {
 	}
 
 	// Now ws1 will leave, and the others should get leaver messages
+	// once the reconnectionTimeout has expired
 	tws1.close()
 
 	// Let's check the ws2 first
