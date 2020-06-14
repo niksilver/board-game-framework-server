@@ -434,6 +434,16 @@ func TestHub_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 // A test for general connecting, disconnecting and message sending...
 // This just needs to run and not deadlock.
 func TestHub_GeneralChaos(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Tracking our connections and clients
 	cMap := make(map[string]*websocket.Conn)
 	cSlice := make([]string, 0)
 	consumed := 0
