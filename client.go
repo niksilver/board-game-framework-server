@@ -33,8 +33,8 @@ func init() {
 
 type Client struct {
 	ID string
-	// Last envelope number received by predecessor, or -1
-	LastNum int
+	// Envelope number expected when starting, or -1
+	Num int
 	// Ref for tracing purposes only
 	Ref string
 	// Don't close the websocket directly. That's managed internally.
@@ -228,9 +228,7 @@ func (c *Client) sendExt() {
 
 	// Wait for the initial buffer before choosing the first scenario
 	c.Buffer = <-c.InitialBuffer
-	if c.LastNum >= 0 {
-		c.Buffer.Set(c.LastNum + 1)
-	}
+	c.Buffer.Set(c.Num)
 	c.Buffer.Start()
 
 	if connected && c.Buffer.HasUnsent() {

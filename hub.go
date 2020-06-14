@@ -88,7 +88,8 @@ func (h *Hub) receiveInt() {
 			switch {
 			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
-				msg.From.Buffer.Save(msg.From.LastNum+1):
+				h.other(msg.From).Buffer.Save(msg.From.Num):
+				// msg.From.Buffer.Save(msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
@@ -111,7 +112,7 @@ func (h *Hub) receiveInt() {
 				c := msg.From
 				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
-				caseLog.Debug("New client for old, no lastnum", "oldcref", cOld.Ref)
+				caseLog.Debug("New client for old, no takeover", "oldcref", cOld.Ref)
 				h.remove(cOld)
 				caseLog.Debug("Sending leaver messages")
 				h.num++

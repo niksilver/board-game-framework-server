@@ -30,10 +30,10 @@ var aLog = log15.New("side", "app")
 func init() {
 	aLog.SetHandler(
 		log15.LvlFilterHandler(
-			log15.LvlInfo,
-			// log15.LvlDebug,
-			log15.DiscardHandler(),
-			// log15.StdoutHandler,
+			// log15.LvlInfo,
+			log15.LvlDebug,
+			// log15.DiscardHandler(),
+			log15.StdoutHandler,
 		))
 }
 
@@ -87,10 +87,14 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start the client handler running
-	num := lastNum(r.URL.RawQuery)
+	lastNum := lastNum(r.URL.RawQuery)
+	num := lastNum
+	if lastNum >= 0 {
+		num = lastNum + 1
+	}
 	c := &Client{
 		ID:            clientID,
-		LastNum:       num,
+		Num:           num,
 		WS:            ws,
 		Hub:           hub,
 		Buffer:        NewBuffer(),

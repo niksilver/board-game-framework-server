@@ -15,24 +15,23 @@ import (
 // Buffer holds envelopes which may need to be sent or resent at a
 // later time.
 type Buffer struct {
-	unsent    int
-	unsentSet bool
-	buf       []*Envelope
-	mx        sync.Mutex
-	cleaning  bool      // If periodic or one-off cleaning is in progress
-	done      chan bool // Or nil if periodic cleaning not started
-	save      int       // Num to save from cleaning
+	unsent   int // Next unsent message num, or -1 if none known
+	buf      []*Envelope
+	mx       sync.Mutex
+	cleaning bool      // If periodic or one-off cleaning is in progress
+	done     chan bool // Or nil if periodic cleaning not started
+	save     int       // Num to save from cleaning
 }
 
 // NewBuffer creates a new buffer with no unsent messages
 func NewBuffer() *Buffer {
 	return &Buffer{
-		unsentSet: false,
-		buf:       make([]*Envelope, 0),
-		mx:        sync.Mutex{},
-		cleaning:  false,
-		done:      nil,
-		save:      -1,
+		unsent:   -1,
+		buf:      make([]*Envelope, 0),
+		mx:       sync.Mutex{},
+		cleaning: false,
+		done:     nil,
+		save:     -1,
 	}
 }
 
@@ -41,7 +40,7 @@ func (b *Buffer) HasUnsent() bool {
 	b.mx.Lock()
 	defer b.mx.Unlock()
 
-	if !b.unsentSet {
+	if b.unsent < 0 {
 		return false
 	}
 
@@ -58,7 +57,6 @@ func (b *Buffer) HasUnsent() bool {
 func (b *Buffer) Set(num int) {
 	b.mx.Lock()
 	b.unsent = num
-	b.unsentSet = true
 	b.mx.Unlock()
 }
 
@@ -69,7 +67,7 @@ func (b *Buffer) Next() (*Envelope, error) {
 	b.mx.Lock()
 	defer b.mx.Unlock()
 
-	if !b.unsentSet {
+	if b.unsent < 0 {
 		return nil, fmt.Errorf("No num set for next unsent envelope")
 	}
 
@@ -206,6 +204,8 @@ func (b *Buffer) Save(num int) bool {
 	b.mx.Lock()
 	defer b.mx.Unlock()
 
+	fLog := aLog.New("fn", "buffer.Save")
+	fLog.Debug("Entering", "num", num, "Buffer", b.stringReal())
 	b.save = -1
 	for _, env := range b.buf {
 		if env.Num == num {
@@ -219,7 +219,11 @@ func (b *Buffer) Save(num int) bool {
 func (b *Buffer) String() string {
 	b.mx.Lock()
 	defer b.mx.Unlock()
+	return b.stringReal()
+}
 
+// Like String(), but doesn't lock.
+func (b *Buffer) stringReal() string {
 	nums := make([]string, len(b.buf))
 	for i, env := range b.buf {
 		nums[i] = strconv.Itoa(env.Num)
