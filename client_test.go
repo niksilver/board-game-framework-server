@@ -97,6 +97,16 @@ func TestClient_NewIDsAreDifferent(t *testing.T) {
 	cIDs := make([]string, 100)
 	wss := make([]*websocket.Conn, 100)
 
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
