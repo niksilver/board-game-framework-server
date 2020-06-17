@@ -375,6 +375,44 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 	WG.Wait()
 }
 
+func TestClient_NewClientWithBadLastNumShouldGetClosedConn(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect a client with an unavailable lastnum
+
+	game := "/cl.bad.lastnum"
+
+	// Connect the client with a silly lastnum
+	ws, _, err := dial(serv, game, "BAD", 1029)
+	defer ws.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws := newTConn(ws, "BAD")
+	rr, timedOut := tws.readMessage(500)
+	if timedOut {
+		t.Fatal("Timed out, but expected closed connection")
+	}
+	if rr.err == nil {
+		t.Fatal("Read connection okay, but expected closed connection")
+	}
+
+	// Tidy up, and check everything in the main app finishes
+	ws.Close()
+	WG.Wait()
+}
+
 func TestClient_ExcessiveMessageWillCloseConnection(t *testing.T) {
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
