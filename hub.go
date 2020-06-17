@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -91,7 +90,7 @@ func (h *Hub) receiveInt() {
 			switch {
 			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
-				h.buffer.Available(msg.From.ID, msg.From.Num):
+				msg.From.Num >= 0:
 				// New client taking over from old client
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
@@ -100,7 +99,7 @@ func (h *Hub) receiveInt() {
 
 				// Give the new client its initial queue to kick it off
 				// client, because it knows when it's ready
-				cOld.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
+				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 
 				// Add the client to our list
 				h.clients[c] = true
@@ -108,12 +107,15 @@ func (h *Hub) receiveInt() {
 				// Shut down old client
 				h.remove(cOld)
 
-			case msg.Env.Intent == "Joiner" && h.other(msg.From) != nil:
+			case msg.Env.Intent == "Joiner" &&
+				h.other(msg.From) != nil &&
+				msg.From.Num < 0:
 				// New client for old ID, but won't take over
 				c := msg.From
 				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
-				caseLog.Debug("New client for old, no takeover", "oldcref", cOld.Ref)
+				caseLog.Debug("New client while old present, but no takeover",
+					"oldcref", cOld.Ref)
 				h.remove(cOld)
 				caseLog.Debug("Sending leaver messages")
 				h.num++
@@ -180,7 +182,7 @@ func (h *Hub) receiveInt() {
 				h.leaver(c)
 				caseLog.Debug("Sent leaver messages")
 
-			case msg.Env.Body != nil:
+			case msg.Env.Intent == "Peer":
 				// We have a peer message
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
@@ -218,7 +220,7 @@ func (h *Hub) receiveInt() {
 
 			default:
 				// Should never get here
-				panic(fmt.Sprintf("Got inexplicable msg: %#v", msg))
+				fLog.Error("Cannot handle message", "msg", msg)
 			}
 			h.buffer.Clean()
 		}

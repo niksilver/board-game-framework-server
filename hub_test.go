@@ -1097,12 +1097,11 @@ func TestHub_ReconnectingClientsDontMissMessages(t *testing.T) {
 	}
 
 	// Wait for the listener to be ready
-	fLog.Debug("Sending waiting go", "id", "WS2")
+	fLog.Debug("Sender waiting to go", "id", "WS2")
 	<-listenerReady
-	fLog.Debug("Sending going", "id", "WS2")
 
 	// Send some messages
-	fLog.Debug("Sending messages", "id", "WS2", "num", -1)
+	fLog.Debug("Sending messages", "id", "WS2")
 	for i := 0; i < 20; i++ {
 		time.Sleep(time.Duration(rand.Intn(50)) * time.Millisecond)
 		n := len(sent)

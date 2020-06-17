@@ -102,7 +102,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	c.Ref = fmt.Sprintf("%p", c)
 	c.Start()
-	aLog.Info("Connected client", "id", clientID, "lastnum", num, "ref", c.Ref)
+	aLog.Info("Connected client", "id", clientID, "num", num, "ref", c.Ref)
 }
 
 // lastNum gets the integer given by the lastnum query parameter,
