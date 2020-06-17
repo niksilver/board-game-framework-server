@@ -271,9 +271,10 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 
 // It might be that when a client joins there is already a client with
 // the same ID in the game.
-// In this case the original client should be kicked out (and a Leaver
-// message sent) and the new client should be treated as a new joiner.
-func TestClient_IfDuplicateIDConnectsPreviousClientEjected(t *testing.T) {
+// In this case, if the new client can join (by giving a sensible lastnum)
+// the original client should get a closed connection
+// and the new client should take over smoothly.
+func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
 
@@ -300,7 +301,7 @@ func TestClient_IfDuplicateIDConnectsPreviousClientEjected(t *testing.T) {
 	}
 	tws1 := newTConn(ws1, "DUP1")
 	if err = swallowMany(
-		intentExp{"WF1 joining, ws1", tws1, "Welcome"},
+		intentExp{"WS1 joining, ws1", tws1, "Welcome"},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -327,113 +328,44 @@ func TestClient_IfDuplicateIDConnectsPreviousClientEjected(t *testing.T) {
 	}
 	tws2b := newTConn(ws2b, "DUP2(b)")
 
-	// The first client should get a leaver message about 2a and a joiner
-	// message about 2b.  It should see the ID in the From field only.
-	rr, timedOut := tws1.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading message from ws1")
-	}
-	if rr.err != nil {
-		t.Fatal(err)
+	// If the first client sends a message, then ws2a should get a closed
+	// connection while reading, and ws2b should receive the message.
+
+	message := "Hi dupe"
+	err = ws1.WriteMessage(websocket.BinaryMessage, []byte(message))
+	if err != nil {
+		t.Fatalf("ws1: Error sending message: %s", err)
 	}
 
-	// Unwrap the first message and check it
+	rr, timedOut := tws2a.readMessage(500)
+	if timedOut {
+		t.Fatal("ws2a timed out, but expected closed connection")
+	}
+	if rr.err == nil {
+		t.Fatal("ws2a read connection okay, but expected closed connection")
+	}
+
+	rr, timedOut = tws2b.readMessage(500)
+	if timedOut {
+		t.Fatal("ws2b timed out, but expected to get a message")
+	}
+	if rr.err != nil {
+		t.Fatalf("ws2b: error reading: %s", err)
+	}
+
+	// Unwrap the message and check it
 	env := Envelope{}
 	err = json.Unmarshal(rr.msg, &env)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Intent != "Leaver" {
+	if env.Intent != "Peer" {
 		t.Errorf(
-			"ws1: Message intent was '%s' but expected 'Leaver'", env.Intent,
+			"ws2b: Message intent was '%s' but expected 'Peer'", env.Intent,
 		)
 	}
-	if !sameElements(env.From, []string{"DUP2"}) {
-		t.Errorf(
-			"ws1: Message From field was %v but expected [DUP2]",
-			env.From,
-		)
-	}
-	if !sameElements(env.To, []string{"DUP1"}) {
-		t.Errorf(
-			"ws1: Message To field was %v but expected [DUP1]",
-			env.From,
-		)
-	}
-
-	// Read the second message
-	rr, timedOut = tws1.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading message from ws1")
-	}
-	if rr.err != nil {
-		t.Fatal(err)
-	}
-
-	// Unwrap the second message and check it
-	env = Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env.Intent != "Joiner" {
-		t.Errorf(
-			"ws1: Message intent was '%s' but expected 'Joiner'", env.Intent,
-		)
-	}
-	if !sameElements(env.From, []string{"DUP2"}) {
-		t.Errorf(
-			"ws1: Message From field was %v but expected [DUP2]",
-			env.From,
-		)
-	}
-	if !sameElements(env.To, []string{"DUP1"}) {
-		t.Errorf(
-			"ws1: Message To field was %v but expected [DUP1]",
-			env.From,
-		)
-	}
-
-	// The second client should get disconnected.
-	rr, timedOut = tws2a.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading message from ws2a")
-	}
-	if rr.err == nil {
-		t.Errorf("Expected error reading 2a, but got response with message %v", string(rr.msg))
-	}
-
-	// The third client should get a welcome message.
-	// It should see its ID in the To and the other client in the From field.
-	rr, timedOut = tws2b.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading message from ws2b")
-	}
-	if rr.err != nil {
-		t.Fatal(err)
-	}
-	// Unwrap the message and check it
-	env = Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env.Intent != "Welcome" {
-		t.Errorf(
-			"ws2b message intent was '%s' but expected 'Welcome'", env.Intent,
-		)
-	}
-	if !sameElements(env.From, []string{"DUP1"}) {
-		t.Errorf(
-			"ws2b message From field was %v but expected [DUP1]",
-			env.From,
-		)
-	}
-	if !sameElements(env.To, []string{"DUP2"}) {
-		t.Errorf(
-			"ws2b message To field was %v but expected [DUP2]",
-			env.From,
-		)
+	if string(env.Body) != message {
+		t.Errorf("Expected message body '%s' but got '%s'", message, env.Body)
 	}
 
 	// Tidy up, and check everything in the main app finishes
