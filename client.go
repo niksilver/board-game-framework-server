@@ -282,6 +282,12 @@ func (c *Client) connectedWithQueued() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
+			if m.Env.Intent == "BadLastnum" {
+				// This message is for us
+				fLog.Debug("Got BadLastnum intent")
+				c.closeWith("Bad lastnum")
+				return false, true
+			}
 			// Message needs to go onto the queue
 			fLog.Debug("Adding to queue", "env", niceEnv(m.Env))
 			c.queue.Add(m.Env)
@@ -349,6 +355,12 @@ func (c *Client) connectedNoneQueued() (bool, bool) {
 				fLog.Debug("Got LostConnection intent")
 				return false, false
 			}
+			if m.Env.Intent == "BadLastnum" {
+				// This message is for us
+				fLog.Debug("Got BadLastnum intent")
+				c.closeWith("Bad lastnum")
+				return false, true
+			}
 			// We should send this message
 			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
 			if err := c.WS.SetWriteDeadline(
@@ -404,6 +416,16 @@ func (c *Client) disconnected() {
 			fLog.Debug("Got a ping message; ignoring")
 		}
 	}
+}
+
+// closeWith closes the connection with the given error message
+func (c *Client) closeWith(desc string) {
+	c.WS.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.ClosePolicyViolation, desc),
+		time.Now().Add(writeTimeout),
+	)
+	c.WS.Close()
 }
 
 func niceEnv(e *Envelope) string {

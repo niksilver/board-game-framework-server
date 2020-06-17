@@ -89,8 +89,20 @@ func (h *Hub) receiveInt() {
 
 			switch {
 			case msg.Env.Intent == "Joiner" &&
+				!h.canFulfill(msg.From.ID, msg.From.Num):
+				// New client but bad lastnum; eject client
+				c := msg.From
+				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog.Debug("New client but bad lastnum")
+				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
+				c.Pending <- &Message{
+					Env: &Envelope{Intent: "BadLastnum"},
+				}
+				close(c.Pending)
+
+			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
-				msg.From.Num >= 0:
+				h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
@@ -226,6 +238,11 @@ func (h *Hub) receiveInt() {
 		}
 
 	}
+}
+
+// canFullfill says if we can send the next num the client is expecting
+func (h *Hub) canFulfill(id string, num int) bool {
+	return num < 0 || num == h.num || h.buffer.Available(id, num)
 }
 
 // remove a given client
