@@ -241,7 +241,7 @@ readingLoop:
 
 // canFullfill says if we can send the next num the client is expecting
 func (h *Hub) canFulfill(id string, num int) bool {
-	return num < 0 || num == h.num || h.buffer.Available(id, num)
+	return num < 0 || num == h.num+1 || h.buffer.Available(id, num)
 }
 
 // remove a given client
