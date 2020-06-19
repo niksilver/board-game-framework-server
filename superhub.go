@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 const MaxClients = 50
@@ -14,19 +15,21 @@ const MaxClients = 50
 // Superhub gives a hub to a client. The client needs to
 // release the hub when it's done with it.
 type Superhub struct {
-	hubs   map[string]*Hub // From game name (path) to hub
-	counts map[*Hub]int    // Count of clients using each hub
-	names  map[*Hub]string // From hub pointer to game name
-	mux    sync.RWMutex    // To ensure concurrency-safety
+	hubs   map[string]*Hub    // From game name (path) to hub
+	counts map[*Hub]int       // Count of clients using each hub
+	names  map[*Hub]string    // From hub pointer to game name
+	tOut   map[*Hub][]*Client // Clients timing out per hub
+	mux    sync.RWMutex       // To ensure concurrency-safety
 }
 
 // newSuperhub creates an empty superhub, which will hold many hubs.
 func NewSuperhub() *Superhub {
 	return &Superhub{
-		hubs:   make(map[string]*Hub), // From game name (path) to hub
-		counts: make(map[*Hub]int),    // Count of clients using each hub
-		names:  make(map[*Hub]string), // From hub pointer to game name
-		mux:    sync.RWMutex{},        // To ensure concurrency-safety
+		hubs:   make(map[string]*Hub),    // From game name to hub
+		counts: make(map[*Hub]int),       // Count of cl's using a hub
+		names:  make(map[*Hub]string),    // From hub ptr to game name
+		tOut:   make(map[*Hub][]*Client), // Clients timing out per hub
+		mux:    sync.RWMutex{},           // For concurrency-safety
 	}
 }
 
@@ -63,22 +66,54 @@ func (sh *Superhub) Hub(name string) (*Hub, error) {
 // Release allows a client to say it is no longer using the given hub.
 // If that means no clients are using the hub then the hub will be told
 // it is detached.
-func (sh *Superhub) Release(h *Hub) {
+func (sh *Superhub) Release(h *Hub, c *Client) {
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
-	aLog.Debug("superhub.Release, releasing hub", "name", sh.names[h])
 
-	sh.counts[h]--
-	if sh.counts[h] == 0 {
-		aLog.Debug("superhub.Release, deleting hub", "name", sh.names[h])
-		delete(sh.hubs, sh.names[h])
-		delete(sh.names, h)
-		aLog.Debug("superhub.Release, sending detached flag", "name", sh.names[h])
-		h.Detached <- true
-		aLog.Debug("superhub.Release, sent detached flag", "name", sh.names[h])
+	fLog := aLog.New("fn", "superhub.Release", "hubname", sh.names[h],
+		"cid", c.ID, "cref", c.Ref)
+	fLog.Debug("Starting reconnection timeout")
+
+	// Put the client in the timing-out list
+	sh.tOut[h] = append(sh.tOut[h], c)
+
+	// Send a possible message to the hub after timeout
+	time.AfterFunc(reconnectionTimeout,
+		func() {
+			sh.mux.Lock()
+			defer sh.mux.Unlock()
+
+			fLog := aLog.New("fn", "superhub.Release.AfterFunc",
+				"hubname", sh.names[h], "cid", c.ID, "cref", c.Ref)
+			fLog.Debug("Entering")
+			// Delete the client from the list
+			sh.tOut[h] = remove(sh.tOut[h], c)
+			// Send a timeout unless there's another client with the same ID
+			for _, cOther := range sh.tOut[h] {
+				if cOther.ID == c.ID {
+					fLog.Debug("Found later client", "cOtherref", cOther.Ref)
+					return
+				}
+			}
+			rem := len(sh.tOut[h])
+			h.Timeout <- &TimeoutMsg{
+				Client:    c,
+				Remaining: rem,
+			}
+			fLog.Debug("Sent timeout for client", "remaining", rem)
+		})
+
+	fLog.Debug("Exiting")
+}
+
+// Remove one client from a slice of clients
+func remove(cs []*Client, c *Client) []*Client {
+	for i, c2 := range cs {
+		if c == c2 {
+			return append(cs[:i], cs[i+1:]...)
+		}
 	}
-	aLog.Debug("superhub.Release, exiting",
-		"name", sh.names[h], "count", sh.counts[h])
+	return cs
 }
 
 // Count returns the number of hubs in the superhub

@@ -202,15 +202,6 @@ func (c *Client) receiveExt() {
 			Intent: "LostConnection",
 		},
 	}
-
-	time.Sleep(reconnectionTimeout)
-	fLog.Debug("Sending reconnection timeout")
-	c.Hub.Pending <- &Message{
-		From: c,
-		Env: &Envelope{
-			Intent: "ReconnectionTimeout",
-		},
-	}
 }
 
 // sendExt is a goroutine that sends network messages out. These are
@@ -225,22 +216,17 @@ func (c *Client) sendExt() {
 
 	// Keep go through scenarios until we need to shut down this client
 	connected := true
-	shutdown := false
 
 	// Wait for the initial queue before choosing the first scenario
 	c.queue = <-c.InitialQueue
 
 	if connected && !c.queue.Empty() {
 		fLog.Debug("Scenario: connected, queued envelopes")
-		connected, shutdown = c.connectedWithQueued()
+		connected = c.connectedWithQueued()
 	}
-	if !shutdown && connected && c.queue.Empty() {
+	if connected && c.queue.Empty() {
 		fLog.Debug("Scenario: connected, no queued envelopes")
-		connected, shutdown = c.connectedNoneQueued()
-	}
-	if !shutdown && !connected {
-		fLog.Debug("Scenario: disconnected")
-		c.disconnected()
+		c.connectedNoneQueued()
 	}
 
 	// We are here due to either the channel being closed or the
@@ -258,12 +244,12 @@ func (c *Client) sendExt() {
 
 	// We're done. Tell the superhub we're done with the hub
 	fLog.Debug("Releasing hub")
-	Shub.Release(c.Hub)
+	Shub.Release(c.Hub, c)
 }
 
 // connectedWithQueued is for processing messages from the hub while
-// sending messages from the queue. Returns connected flag and shutdown flag.
-func (c *Client) connectedWithQueued() (bool, bool) {
+// sending messages from the queue. Returns connected flag.
+func (c *Client) connectedWithQueued() bool {
 	fLog := aLog.New("fn", "client.connectedWithQueued",
 		"id", c.ID, "ref", c.Ref)
 
@@ -276,18 +262,18 @@ func (c *Client) connectedWithQueued() (bool, bool) {
 			if !ok {
 				// Channel closed, we need to shut down
 				fLog.Debug("Channel closed")
-				return true, true
+				return false
 			}
 			if m.Env.Intent == "LostConnection" {
 				// This message is for us
 				fLog.Debug("Got LostConnection intent")
-				return false, false
+				return false
 			}
 			if m.Env.Intent == "BadLastnum" {
 				// This message is for us
 				fLog.Debug("Got BadLastnum intent")
 				c.closeWith("Bad lastnum")
-				return false, true
+				return false
 			}
 			// Message needs to go onto the queue
 			fLog.Debug("Adding to queue", "env", niceEnv(m.Env))
@@ -299,106 +285,47 @@ func (c *Client) connectedWithQueued() (bool, bool) {
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Ping deadline error", "err", err)
-				return false, false
+				return false
 			}
 			if err := c.WS.WriteMessage(
 				websocket.PingMessage, nil); err != nil {
 				// Ping write error, move to disconnected state
 				fLog.Debug("Ping write error", "err", err)
-				return false, false
+				return false
 			}
 		default:
 			fLog.Debug("Sending envelope from queue")
 			env, err := c.queue.Get()
 			if err != nil {
 				fLog.Debug("Problem getting envelope", "err", err.Error())
-				return false, true
+				return false
 			}
 			fLog.Debug("Got queued envelope okay", "env", niceEnv(env))
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message deadline error", "err", err)
-				return false, false
+				return false
 			}
 			if err := c.WS.WriteJSON(env); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Message write error", "err", err)
-				return false, false
+				return false
 			}
 			// Send was okay
 			fLog.Debug("Sent okay")
 			if c.queue.Empty() {
 				fLog.Debug("Queue is empty; reselecting scenario")
-				return true, false
+				return true
 			}
 		}
 	}
 }
 
 // connectedNoneQueued is for processing messages from the hub when
-// the queue is empty. Returns connected and shutdown flags.
-func (c *Client) connectedNoneQueued() (bool, bool) {
+// the queue is empty. Returns when we're disconnected.
+func (c *Client) connectedNoneQueued() {
 	fLog := aLog.New("fn", "client.connectedNoneQueued", "id", c.ID, "c", c.Ref)
-
-	// Keep receiving internal messages
-	for {
-		fLog.Debug("Entering select")
-		select {
-		case m, ok := <-c.Pending:
-			fLog.Debug("Got pending")
-			if !ok {
-				// Channel closed, we need to shut down
-				fLog.Debug("Channel closed")
-				return true, true
-			}
-			if m.Env.Intent == "LostConnection" {
-				fLog.Debug("Got LostConnection intent")
-				return false, false
-			}
-			if m.Env.Intent == "BadLastnum" {
-				// This message is for us
-				fLog.Debug("Got BadLastnum intent")
-				c.closeWith("Bad lastnum")
-				return false, true
-			}
-			// We should send this message
-			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("Deadline error", "err", err)
-				return false, false
-			}
-			if err := c.WS.WriteJSON(m.Env); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("WriteJSON error", "err", err)
-				return false, false
-			}
-			fLog.Debug("Wrote JSON", "env", niceEnv(m.Env))
-		case <-c.pinger.C:
-			fLog.Debug("Sending ping")
-			if err := c.WS.SetWriteDeadline(
-				time.Now().Add(writeTimeout)); err != nil {
-				// Write error, move to disconnected state
-				fLog.Debug("Deadline2 error", "err", err)
-				return false, false
-			}
-			if err := c.WS.WriteMessage(
-				websocket.PingMessage, nil); err != nil {
-				// Ping write error, move to disconnected state
-				fLog.Debug("Write2 error", "err", err)
-				return false, false
-			}
-		}
-	}
-}
-
-// disconnected is just to stay alive until receiveExt signals
-// the reconnection wait has timed out.
-// Returns when the pending channel closes.
-func (c *Client) disconnected() {
-	fLog := aLog.New("fn", "client.disconnected", "id", c.ID, "c", c.Ref)
 
 	// Keep receiving internal messages
 	for {
@@ -411,10 +338,44 @@ func (c *Client) disconnected() {
 				fLog.Debug("Channel closed")
 				return
 			}
-			// Ignore actual messages
-			fLog.Debug("Ignoring envelope", "env", niceEnv(m.Env))
+			if m.Env.Intent == "LostConnection" {
+				fLog.Debug("Got LostConnection intent")
+				return
+			}
+			if m.Env.Intent == "BadLastnum" {
+				// This message is for us
+				fLog.Debug("Got BadLastnum intent")
+				c.closeWith("Bad lastnum")
+				return
+			}
+			// We should send this message
+			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline error", "err", err)
+				return
+			}
+			if err := c.WS.WriteJSON(m.Env); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("WriteJSON error", "err", err)
+				return
+			}
+			fLog.Debug("Wrote JSON", "env", niceEnv(m.Env))
 		case <-c.pinger.C:
-			fLog.Debug("Got a ping message; ignoring")
+			fLog.Debug("Sending ping")
+			if err := c.WS.SetWriteDeadline(
+				time.Now().Add(writeTimeout)); err != nil {
+				// Write error, move to disconnected state
+				fLog.Debug("Deadline2 error", "err", err)
+				return
+			}
+			if err := c.WS.WriteMessage(
+				websocket.PingMessage, nil); err != nil {
+				// Ping write error, move to disconnected state
+				fLog.Debug("Write2 error", "err", err)
+				return
+			}
 		}
 	}
 }

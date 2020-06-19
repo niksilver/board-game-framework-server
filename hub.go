@@ -17,12 +17,11 @@ type Hub struct {
 	num int
 	// Messages from clients that need to be bounced out.
 	Pending chan *Message
+	// Message from the superhub saying timed out waiting for a reconnection
+	// to replace a client
+	Timeout chan *TimeoutMsg
 	// Buffer of recent envelopes, in case they need to be resent
 	buffer *Buffer
-	// For the superhub to say there will be no more joiners
-	Detached chan bool
-	// For the hub to note to itself it's acknowledged the detachement
-	detachedAck bool
 }
 
 // Message is something that the Hub needs to bounce out to clients
@@ -31,6 +30,13 @@ type Message struct {
 	From  *Client
 	MType int
 	Env   *Envelope
+}
+
+// TimeoutMsg comes from the superhub, signalling that a client
+// reconnection timeout has occurred.
+type TimeoutMsg struct {
+	Client    *Client // The client whose timer has fired
+	Remaining int     // Number of clients still due to time out
 }
 
 // Envelope is the structure for messages sent to clients. Other than
@@ -52,11 +58,8 @@ func NewHub() *Hub {
 		clients: make(map[*Client]bool),
 		num:     0,
 		Pending: make(chan *Message),
+		Timeout: make(chan *TimeoutMsg),
 		buffer:  NewBuffer(),
-		// Channel size 1 so the superhub doesn't block
-		Detached: make(chan bool, 1),
-		// For the hub to note to itself it's acknowledged the detachement
-		detachedAck: false,
 	}
 }
 
@@ -76,13 +79,35 @@ func (h *Hub) receiveInt() {
 	defer WG.Done()
 	fLog.Debug("Entering")
 
-	for !h.detachedAck {
+readingLoop:
+	for {
 		fLog.Debug("Selecting")
 
 		select {
-		case <-h.Detached:
-			fLog.Debug("Received detached flag")
-			h.detachedAck = true
+		case msg := <-h.Timeout:
+			// The superhub's client reconnection timer has fired
+			c := msg.Client
+			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
+			caseLog.Debug("Reconnection timed out")
+			if cOther := h.other(c); cOther != nil {
+				caseLog.Debug("Client has been replaced; ignoring",
+					"cOtherID", cOther.ID, "cOtherRef", cOther.Ref)
+				continue
+			}
+
+			// We have a leaver
+			caseLog.Debug("Timed-out client becomes a leaver")
+
+			if len(h.clients) == 0 && msg.Remaining == 0 {
+				caseLog.Debug("No more clients timing out or in hub; exiting")
+				break readingLoop
+			}
+
+			// Send a leaver message to remaining clients
+			h.num++
+			h.leaver(c)
+			h.buffer.Remove(c.ID)
+			caseLog.Debug("Sent leaver messages")
 
 		case msg := <-h.Pending:
 			fLog.Debug("Received pending message")
@@ -117,18 +142,18 @@ func (h *Hub) receiveInt() {
 				h.clients[c] = true
 
 				// Shut down old client
-				h.remove(cOld)
+				h.removeSafely(cOld)
 
 			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
 				msg.From.Num < 0:
-				// New client for old ID, but won't take over
+				// New client for old ID, but didn't ask to take over
 				c := msg.From
 				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client while old present, but no takeover",
 					"oldcref", cOld.Ref)
-				h.remove(cOld)
+				h.removeSafely(cOld)
 				caseLog.Debug("Sending leaver messages")
 				h.num++
 				h.leaver(cOld)
@@ -167,32 +192,7 @@ func (h *Hub) receiveInt() {
 				c := msg.From
 				fLog.Debug("Got lost connection",
 					"fromcid", c.ID, "fromcref", c.Ref)
-				if h.clients[c] {
-					c.Pending <- msg
-				}
-
-			case msg.Env.Intent == "ReconnectionTimeout":
-				// There was no reconnection for a client
-				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
-				caseLog.Debug("Reconnection timed out")
-				if !h.clients[c] {
-					caseLog.Debug("Timed-out client already gone")
-					continue
-				}
-
-				// We have a leaver
-				caseLog.Debug("Timed-out client becomes a leaver")
-
-				// Tell the client it will receive no more messages and
-				// forget about it
-				h.remove(c)
-				h.buffer.Remove(c.ID)
-
-				// Send a leaver message to remaining clients
-				h.num++
-				h.leaver(c)
-				caseLog.Debug("Sent leaver messages")
+				h.removeSafely(c)
 
 			case msg.Env.Intent == "Peer":
 				// We have a peer message
@@ -246,8 +246,10 @@ func (h *Hub) canFulfill(id string, num int) bool {
 }
 
 // remove a given client
-func (h *Hub) remove(c *Client) {
-	close(c.Pending)
+func (h *Hub) removeSafely(c *Client) {
+	if h.clients[c] {
+		close(c.Pending)
+	}
 	delete(h.clients, c)
 }
 
