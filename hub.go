@@ -13,7 +13,7 @@ import (
 // Hub collects all related clients
 type Hub struct {
 	clients map[*Client]bool
-	// Current envelope num
+	// Num for the next envelope num
 	num int
 	// Messages from clients that need to be bounced out.
 	Pending chan *Message
@@ -104,8 +104,8 @@ readingLoop:
 			}
 
 			// Send a leaver message to remaining clients
-			h.num++
 			h.leaver(c)
+			h.num++
 			h.buffer.Remove(c.ID)
 			caseLog.Debug("Sent leaver messages")
 
@@ -118,7 +118,7 @@ readingLoop:
 				// New client but bad lastnum; eject client
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
-				caseLog.Debug("New client but bad lastnum")
+				caseLog.Debug("New client but bad num", "num", msg.From.Num)
 				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 				c.Pending <- &Message{
 					Env: &Envelope{Intent: "BadLastnum"},
@@ -154,12 +154,11 @@ readingLoop:
 					"oldcref", cOld.Ref)
 				h.removeSafely(cOld)
 				caseLog.Debug("Sending leaver messages")
-				h.num++
 				h.leaver(cOld)
+				h.num++
 				h.buffer.Remove(cOld.ID)
 
 				caseLog.Debug("Sending joiner messages")
-				h.num++
 				h.joiner(c)
 
 				// Set the new client going with an empty queue, send it
@@ -167,6 +166,7 @@ readingLoop:
 				c.InitialQueue <- NewQueue()
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
+				h.num++
 				h.clients[c] = true
 
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
@@ -175,7 +175,6 @@ readingLoop:
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
 
 				// Send joiner message to other clients
-				h.num++
 				caseLog.Debug("Sending joiner messages")
 				h.joiner(c)
 
@@ -184,6 +183,7 @@ readingLoop:
 				c.InitialQueue <- NewQueue()
 				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
+				h.num++
 				h.clients[c] = true
 
 			case msg.Env.Intent == "LostConnection":
@@ -200,7 +200,6 @@ readingLoop:
 				caseLog.Debug("Got peer msg", "content", string(msg.Env.Body))
 
 				toCls := h.exclude(c)
-				h.num++
 				msg.Env.From = []string{c.ID}
 				msg.Env.To = ids(toCls)
 				msg.Env.Num = h.num
@@ -228,6 +227,7 @@ readingLoop:
 				}
 				h.buffer.Add(c.ID, msgR.Env)
 				c.Pending <- msgR
+				h.num++
 
 			default:
 				// Should never get here
@@ -241,7 +241,14 @@ readingLoop:
 
 // canFullfill says if we can send the next num the client is expecting
 func (h *Hub) canFulfill(id string, num int) bool {
-	return num < 0 || num == h.num+1 || h.buffer.Available(id, num)
+	pr := "["
+	for _, e := range h.buffer.buf[id] {
+		pr = pr + niceEnv(e)
+	}
+	pr = pr + "]"
+	aLog.Debug("canFulfill", "id", id, "num", num, "buf", pr,
+		"result", num < 0 || num == h.num || h.buffer.Available(id, num))
+	return num < 0 || num == h.num || h.buffer.Available(id, num)
 }
 
 // remove a given client
