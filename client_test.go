@@ -328,14 +328,7 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 	}
 	tws2b := newTConn(ws2b, "DUP2(b)")
 
-	// If the first client sends a message, then ws2a should get a closed
-	// connection while reading, and ws2b should receive the message.
-
-	message := "Hi dupe"
-	err = ws1.WriteMessage(websocket.BinaryMessage, []byte(message))
-	if err != nil {
-		t.Fatalf("ws1: Error sending message: %s", err)
-	}
+	// If ws2a tries to read the connection it should find it's closed
 
 	rr, timedOut := tws2a.readMessage(500)
 	if timedOut {
@@ -343,6 +336,14 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 	}
 	if rr.err == nil {
 		t.Fatal("ws2a read connection okay, but expected closed connection")
+	}
+
+	// Now if the first client sends a message, then ws2b should receive it
+
+	message := "Hi dupe"
+	err = ws1.WriteMessage(websocket.BinaryMessage, []byte(message))
+	if err != nil {
+		t.Fatalf("ws1: Error sending message: %s", err)
 	}
 
 	rr, timedOut = tws2b.readMessage(500)

@@ -134,8 +134,7 @@ readingLoop:
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
-				// Give the new client its initial queue to kick it off
-				// client, because it knows when it's ready
+				// Give the new client its initial queue to start it off
 				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 
 				// Add the client to our list
