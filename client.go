@@ -204,6 +204,7 @@ func (c *Client) receiveExt() {
 	}
 
 	time.Sleep(reconnectionTimeout)
+	fLog.Debug("Sending reconnection timeout")
 	c.Hub.Pending <- &Message{
 		From: c,
 		Env: &Envelope{

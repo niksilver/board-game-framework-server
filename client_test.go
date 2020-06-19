@@ -375,7 +375,9 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 	WG.Wait()
 }
 
-func TestClient_NewClientWithBadLastNumShouldGetClosedConn(t *testing.T) {
+func TestClient_NewClientWithBadLastnumShouldGetClosedConn(t *testing.T) {
+	fLog := tLog.New("fn", "TestClient_NewClientWithBadLastnumShouldGetClosedConn")
+
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
 
@@ -409,6 +411,7 @@ func TestClient_NewClientWithBadLastNumShouldGetClosedConn(t *testing.T) {
 	}
 
 	// Tidy up, and check everything in the main app finishes
+	fLog.Debug("Tidying up")
 	ws.Close()
 	WG.Wait()
 }
