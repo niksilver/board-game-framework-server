@@ -64,8 +64,7 @@ func (sh *Superhub) Hub(name string) (*Hub, error) {
 }
 
 // Release allows a client to say it is no longer using the given hub.
-// If that means no clients are using the hub then the hub will be told
-// it is detached.
+// A reconnection timer will start and eventually alert the hub.
 func (sh *Superhub) Release(h *Hub, c *Client) {
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
@@ -88,6 +87,7 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 			fLog.Debug("Entering")
 			// Delete the client from the list
 			sh.tOut[h] = remove(sh.tOut[h], c)
+			sh.decrement(h)
 			// Send a timeout unless there's another client with the same ID
 			for _, cOther := range sh.tOut[h] {
 				if cOther.ID == c.ID {
@@ -104,6 +104,17 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 		})
 
 	fLog.Debug("Exiting")
+}
+
+// Decrement the count of clients for a hub, and remove the hub if necessary
+func (sh *Superhub) decrement(h *Hub) {
+	sh.counts[h]--
+	if sh.counts[h] == 0 {
+		aLog.Debug("superhub.decrement, deleting hub", "name", sh.names[h])
+		delete(sh.hubs, sh.names[h])
+		delete(sh.names, h)
+		delete(sh.tOut, h)
+	}
 }
 
 // Remove one client from a slice of clients
