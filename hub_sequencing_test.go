@@ -595,3 +595,64 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	// Wait for all processes to finish
 	WG.Wait()
 }
+
+// If a client connects with an existing ID for which there's an old
+// client, and it's expecting a sensible last num but it was too slow,
+// then it should be get a closed connection with a suitable message.
+func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 200 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect a client and read the num
+	game := "/hub.reconn.too.late"
+	ws1a, _, err := dial(serv, game, "REC1", -1)
+	defer ws1a.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1a := newTConn(ws1a, "REC1")
+	env, err := tws1a.readEnvelope(500)
+	if err != nil {
+		t.Fatalf("Error reading envelope: %s", err)
+	}
+	lastnum := env.Num
+
+	// Close the connection, wait too long, then reconnect with a
+	// sensible lastnum
+
+	tws1a.close()
+	time.Sleep(500 * time.Millisecond)
+
+	ws1b, _, err := dial(serv, game, "REC1", lastnum)
+	if err != nil {
+		t.Fatalf("Error dialling for ws1b: %s", err)
+	}
+	defer ws1b.Close()
+	tws1b := newTConn(ws1b, "REC1")
+	rr, timedOut := tws1b.readMessage(250)
+	if timedOut {
+		t.Fatal("ws1b timed out listening for expected close")
+	}
+	if rr.err == nil {
+		t.Fatal("ws1b should have got a closed connection, but didn't")
+	}
+	if !strings.Contains(rr.err.Error(), "lastnum") {
+		t.Errorf("Error message was not suitable: '%s'", rr.err.Error())
+	}
+
+	// Close the other connections
+	tws1a.close()
+	tws1b.close()
+
+	// Wait for all processes to finish
+	WG.Wait()
+}

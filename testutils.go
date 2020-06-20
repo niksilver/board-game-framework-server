@@ -174,6 +174,25 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 	}
 }
 
+// readEnvelope expects to read (and will return) an envelope. It will
+// return an error if it times out (timeout is in milliseconds) or some
+// other error.
+func (c *tConn) readEnvelope(timeout int) (*Envelope, error) {
+	rr, timedOut := c.readMessage(500)
+	if timedOut {
+		return nil, fmt.Errorf("Timed out")
+	}
+	if rr.err != nil {
+		return nil, fmt.Errorf("Read error: %s", rr.err.Error())
+	}
+	env := Envelope{}
+	err := json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		return nil, fmt.Errorf("Unmarshalling error: %s", err.Error())
+	}
+	return &env, nil
+}
+
 // close the `tConn`. Always use this to close the connection, instead
 // of the `Conn.Close()`.
 func (c *tConn) close() {
