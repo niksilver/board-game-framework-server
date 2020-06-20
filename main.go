@@ -32,8 +32,8 @@ func init() {
 		log15.LvlFilterHandler(
 			// log15.LvlInfo,
 			log15.LvlDebug,
-			log15.DiscardHandler(),
-			// log15.StdoutHandler,
+			// log15.DiscardHandler(),
+			log15.StdoutHandler,
 		))
 }
 

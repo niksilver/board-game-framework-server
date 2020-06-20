@@ -607,7 +607,7 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 		t.Fatal("Timed out reading connection that should have given error")
 	}
 	if rr.err == nil {
-		t.Fatalf("No error reading message")
+		t.Fatalf("No error reading message, rr.msg=%s", string(rr.msg))
 	}
 	if !strings.Contains(rr.err.Error(), "Maximum number of clients") {
 		t.Errorf("Got error, but the wrong one: %s", rr.err.Error())
