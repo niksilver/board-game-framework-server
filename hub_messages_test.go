@@ -659,3 +659,80 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 	// Check everything in the main app finishes
 	WG.Wait()
 }
+
+func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a web server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Start two clients, 100ms apart. The first should receive a joiner
+	// message about the second approx 100ms after it received its own
+	// welcome message
+
+	game := "/hub.time.ms"
+
+	// Connect the first client and get the time from the welcome message
+	ws1, _, err := dial(serv, game, "TIM1", -1)
+	defer ws1.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1 := newTConn(ws1, "TIM1")
+	rr, timedOut := tws1.readMessage(500)
+	if timedOut {
+		t.Fatal("tws1: Timed out waiting for welcome message")
+	}
+	if rr.err != nil {
+		t.Fatalf("tws1: Got error instead of welcome message")
+	}
+	env := Envelope{}
+	err = json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Intent != "Welcome" {
+		t.Fatalf("tws1: Expected Welcome intent, but got %s", env.Intent)
+	}
+	time1 := env.Time
+
+	// Wait 100ms and connect the second client
+	time.Sleep(100 * time.Millisecond)
+	ws2, _, err := dial(serv, game, "TIM2", -1)
+	defer ws2.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get the time from the Joiner message
+	rr, timedOut = tws1.readMessage(500)
+	if timedOut {
+		t.Fatal("tws1: Timed out waiting for joiner message")
+	}
+	if rr.err != nil {
+		t.Fatalf("tws1: Got error instead of joiner message")
+	}
+	err = json.Unmarshal(rr.msg, &env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Intent != "Joiner" {
+		t.Fatalf("tws1: Expected Joiner intent, but got %s", env.Intent)
+	}
+	time2 := env.Time
+
+	// Check the time difference, but allow for some delays
+	timeDiff := time2 - time1
+	if !(90 <= timeDiff && timeDiff <= 200) {
+		t.Errorf("Expected 90 <= timeDiff <= 200, but got timeDiff %d",
+			timeDiff)
+	}
+}

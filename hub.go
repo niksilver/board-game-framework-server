@@ -186,12 +186,11 @@ readingLoop:
 				caseLog.Debug("Got peer msg", "content", string(msg.Body))
 
 				toCls := h.exclude(c)
-				now := time.Now().Unix()
 				envP := &Envelope{
 					From:   []string{c.ID},
 					To:     ids(toCls),
 					Num:    h.num,
-					Time:   now,
+					Time:   nowMs(),
 					Intent: "Peer",
 					Body:   msg.Body,
 				}
@@ -224,6 +223,11 @@ readingLoop:
 		}
 
 	}
+}
+
+// now in milliseconds past the epock
+func nowMs() int64 {
+	return time.Now().UnixNano() / 1_000_000
 }
 
 // canFullfill says if we can send the next num the client is expecting
@@ -303,7 +307,7 @@ func (h *Hub) welcome(c *Client) {
 		To:     []string{c.ID},
 		From:   h.excludeID(c),
 		Num:    h.num,
-		Time:   time.Now().Unix(),
+		Time:   nowMs(),
 		Intent: "Welcome",
 	}
 	h.buffer.Add(c.ID, env)
@@ -318,7 +322,7 @@ func (h *Hub) joiner(c *Client) {
 		From:   []string{c.ID},
 		To:     h.excludeID(c),
 		Num:    h.num,
-		Time:   time.Now().Unix(),
+		Time:   nowMs(),
 		Intent: "Joiner",
 	}
 
@@ -337,7 +341,7 @@ func (h *Hub) leaver(c *Client) {
 		From:   []string{c.ID},
 		To:     h.allIDs(),
 		Num:    h.num,
-		Time:   time.Now().Unix(),
+		Time:   nowMs(),
 		Intent: "Leaver",
 	}
 	for cl, _ := range h.clients {
