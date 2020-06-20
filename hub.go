@@ -215,12 +215,12 @@ readingLoop:
 				msgR := &Message{
 					From: c,
 					Env: &Envelope{
-						From:   msg.Env.From,
-						To:     msg.Env.To,
-						Num:    msg.Env.Num,
-						Time:   msg.Env.Time,
+						From:   msgP.Env.From,
+						To:     msgP.Env.To,
+						Num:    msgP.Env.Num,
+						Time:   msgP.Env.Time,
 						Intent: "Receipt",
-						Body:   msg.Env.Body,
+						Body:   msgP.Env.Body,
 					},
 				}
 				h.send(c, msgR)
