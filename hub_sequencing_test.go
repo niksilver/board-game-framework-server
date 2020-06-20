@@ -104,17 +104,9 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	// We expect 10 receipts to client 1 and 10 messages to clients 2 and 3
 
 	testMessage := func(tws *tConn, twsName string, intent string, i int) {
-		rr, timedOut := tws.readMessage(500)
-		if timedOut {
-			t.Fatalf("Timed out reading %s, i=%d", twsName, i)
-		}
-		if rr.err != nil {
-			t.Fatalf("Read error, %s, i=%d: %s", twsName, i, rr.err.Error())
-		}
-		env := Envelope{}
-		err := json.Unmarshal(rr.msg, &env)
+		env, err := tws.readEnvelope(500, "tws=%s, i=%d", twsName, i)
 		if err != nil {
-			t.Fatalf("Could not unmarshal '%s': %s", rr.msg, err.Error())
+			t.Fatal(err)
 		}
 		if string(env.Body) != string(msgs[i]) {
 			t.Errorf("%s, i=%d, received '%s' but expected '%s'",
@@ -554,17 +546,9 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 
 	// The first client should get a joiner message. Record the envelope num
 
-	rr, timedOut := tws1a.readMessage(250)
-	if timedOut {
-		t.Fatal("ws1a timed out listening for Joiner message")
-	}
-	if rr.err != nil {
-		t.Fatalf("ws1a got error listening for Joiner: %s", err.Error())
-	}
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
+	env, err := tws1a.readEnvelope(250, "ws1a expecting Joiner")
 	if err != nil {
-		t.Fatalf("ws1a got error unmarshalling: %s", err.Error())
+		t.Fatal(err)
 	}
 	num := env.Num
 
@@ -577,7 +561,7 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	}
 	defer ws1b.Close()
 	tws1b := newTConn(ws1b, "REC1")
-	rr, timedOut = tws1b.readMessage(250)
+	rr, timedOut := tws1b.readMessage(250)
 	if timedOut {
 		t.Fatal("ws1b timed out listening for message")
 	}
@@ -620,9 +604,9 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1a := newTConn(ws1a, "REC1")
-	env, err := tws1a.readEnvelope(500)
+	env, err := tws1a.readEnvelope(500, "Assumed Welcome")
 	if err != nil {
-		t.Fatalf("Error reading envelope: %s", err)
+		t.Fatal(err)
 	}
 	lastnum := env.Num
 

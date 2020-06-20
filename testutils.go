@@ -177,18 +177,24 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 // readEnvelope expects to read (and will return) an envelope. It will
 // return an error if it times out (timeout is in milliseconds) or some
 // other error.
-func (c *tConn) readEnvelope(timeout int) (*Envelope, error) {
+// trace is a format string to put in an error message to aid tracing
+// (may be empty) plus optional values.
+func (c *tConn) readEnvelope(timeout int, trace string, a ...interface{}) (*Envelope, error) {
+	if trace != "" {
+		trace = " (" + fmt.Sprintf(trace, a...) + ")"
+	}
+
 	rr, timedOut := c.readMessage(500)
 	if timedOut {
-		return nil, fmt.Errorf("Timed out")
+		return nil, fmt.Errorf("Timed out%s", trace)
 	}
 	if rr.err != nil {
-		return nil, fmt.Errorf("Read error: %s", rr.err.Error())
+		return nil, fmt.Errorf("Read error%s: %s", trace, rr.err.Error())
 	}
 	env := Envelope{}
 	err := json.Unmarshal(rr.msg, &env)
 	if err != nil {
-		return nil, fmt.Errorf("Unmarshalling error: %s", err.Error())
+		return nil, fmt.Errorf("Unmarshalling error%s: %s", trace, err.Error())
 	}
 	return &env, nil
 }

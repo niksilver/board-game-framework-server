@@ -40,22 +40,10 @@ func TestHubMsgs_SendsWelcome(t *testing.T) {
 	tws := newTConn(ws, "WTESTER")
 
 	// Read the next message, expected within 500ms
-	rr, timedOut := tws.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out waiting for welcome message")
-	}
-	if rr.err != nil {
-		t.Fatalf("Error waiting for welcome message: %s", rr.err.Error())
-	}
-
-	// Unwrap the message and check it
-
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
+	env, err := tws.readEnvelope(500, "Waiting for welcome")
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if env.Intent != "Welcome" {
 		t.Errorf("Message intent was '%s' but expected 'Welcome'", env.Intent)
 	}
@@ -126,22 +114,10 @@ func TestHubMsgs_WelcomeIsFromExistingClients(t *testing.T) {
 	tws3 := newTConn(ws3, "WF3")
 
 	// Get what we expect to be the the welcome message
-	rr, timedOut := tws3.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading message from ws3")
-	}
-	if rr.err != nil {
-		t.Fatal(err)
-	}
-
-	// Unwrap the message and check it
-
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
+	env, err := tws3.readEnvelope(500, "tws3")
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	if env.Intent != "Welcome" {
 		t.Errorf("Message intent was '%s' but expected 'Welcome'", env.Intent)
 	}
@@ -227,7 +203,6 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 	}
 
 	// Send a message, then pick up the results from one of the clients
-
 	err = ws1.WriteMessage(
 		websocket.BinaryMessage, []byte("Can you read me?"),
 	)
@@ -235,21 +210,10 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 		t.Fatalf("Error writing message: %s", err.Error())
 	}
 
-	rr, timedOut := tws2.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out trying to read message")
-	}
-	if rr.err != nil {
-		t.Fatalf("Error reading message: %s", rr.err.Error())
-	}
-
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
+	// Read the message
+	env, err := tws2.readEnvelope(500, "tws2")
 	if err != nil {
-		t.Fatalf(
-			"Couldn't unmarshal message '%s'. Error %s",
-			rr.msg, err.Error(),
-		)
+		t.Fatal(err)
 	}
 
 	// Test fields...
@@ -272,8 +236,8 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 		)
 	}
 
-	// Time field
-	timeT := time.Unix(env.Time, 0) // Convert seconds back to Time(!)
+	// Time field. First convert milliseconds back to Time(!)
+	timeT := time.Unix(env.Time/1000, env.Time%1000)
 	now := time.Now()
 	recentPast := now.Add(-5 * time.Second)
 	if timeT.Before(recentPast) || timeT.After(now) {
@@ -405,7 +369,7 @@ func TestHubMsgs_JoinerMessagesHappen(t *testing.T) {
 	if !sameElements(env.To, []string{"JM1", "JM2"}) {
 		t.Fatalf("ws1 To field didn't contain JM1 and JM2. env is %#v", env)
 	}
-	if env.Time > time.Now().Unix() {
+	if env.Time > nowMs() {
 		t.Fatalf("ws1 got Time field in the future. env is %#v", env)
 	}
 	if env.Body != nil {
@@ -537,7 +501,7 @@ func TestHubMsgs_LeaverMessagesHappen(t *testing.T) {
 	if !sameElements(env.To, []string{"LV2", "LV3"}) {
 		t.Fatalf("ws2 To field didn't contain LV2 and LV3. env is %#v", env)
 	}
-	if env.Time > time.Now().Unix() {
+	if env.Time > nowMs() {
 		t.Fatalf("ws2 got Time field in the future. env is %#v", env)
 	}
 	if env.Body != nil {
@@ -565,7 +529,7 @@ func TestHubMsgs_LeaverMessagesHappen(t *testing.T) {
 	if !sameElements(env.To, []string{"LV2", "LV3"}) {
 		t.Fatalf("ws3 To field didn't contain LV2 and LV3. env is %#v", env)
 	}
-	if env.Time > time.Now().Unix() {
+	if env.Time > nowMs() {
 		t.Fatalf("ws3 got Time field in the future. env is %#v", env)
 	}
 	if env.Body != nil {
@@ -687,15 +651,8 @@ func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "TIM1")
-	rr, timedOut := tws1.readMessage(500)
-	if timedOut {
-		t.Fatal("tws1: Timed out waiting for welcome message")
-	}
-	if rr.err != nil {
-		t.Fatalf("tws1: Got error instead of welcome message")
-	}
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
+
+	env, err := tws1.readEnvelope(500, "tws1 welcome")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,14 +670,7 @@ func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
 	}
 
 	// Get the time from the Joiner message
-	rr, timedOut = tws1.readMessage(500)
-	if timedOut {
-		t.Fatal("tws1: Timed out waiting for joiner message")
-	}
-	if rr.err != nil {
-		t.Fatalf("tws1: Got error instead of joiner message")
-	}
-	err = json.Unmarshal(rr.msg, &env)
+	env, err = tws1.readEnvelope(500, "tws1 joiner")
 	if err != nil {
 		t.Fatal(err)
 	}
