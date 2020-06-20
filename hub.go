@@ -85,13 +85,6 @@ readingLoop:
 			// The superhub's client reconnection timer has fired
 			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 			caseLog.Debug("Reconnection timed out")
-			if !h.known(c) {
-				caseLog.Debug("Client is not known; ignoring")
-				continue
-			}
-
-			// We have a leaver
-			caseLog.Debug("Timed-out client is a leaver; removing")
 			h.remove(c)
 
 			if len(h.clients) == 0 {
