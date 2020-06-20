@@ -12,6 +12,13 @@ import (
 
 // Hub collects all related clients
 type Hub struct {
+	// All clients known and their connection status.
+	// True: Client is connected, and we will pass envelopes into it.
+	// False: Client is disconnected, no running goroutines, but it's
+	//     present as far as other clients are concerned because we might
+	//     get a reconnection (before that times out). We will buffer
+	//     envelopes for this client, even though we can't send them.
+	// Only one client per ID should be known at any time.
 	clients map[*Client]bool
 	// Num for the next envelope num
 	num int
@@ -19,7 +26,7 @@ type Hub struct {
 	Pending chan *Message
 	// Message from the superhub saying timed out waiting for a reconnection
 	// to replace a client
-	Timeout chan *TimeoutMsg
+	Timeout chan *Client
 	// Buffer of recent envelopes, in case they need to be resent
 	buffer *Buffer
 }
@@ -30,13 +37,6 @@ type Message struct {
 	From  *Client
 	MType int
 	Env   *Envelope
-}
-
-// TimeoutMsg comes from the superhub, signalling that a client
-// reconnection timeout has occurred.
-type TimeoutMsg struct {
-	Client    *Client // The client whose timer has fired
-	Remaining int     // Number of clients still due to time out
 }
 
 // Envelope is the structure for messages sent to clients. Other than
@@ -58,7 +58,7 @@ func NewHub() *Hub {
 		clients: make(map[*Client]bool),
 		num:     0,
 		Pending: make(chan *Message),
-		Timeout: make(chan *TimeoutMsg),
+		Timeout: make(chan *Client),
 		buffer:  NewBuffer(),
 	}
 }
@@ -71,7 +71,7 @@ func (h *Hub) Start() {
 }
 
 // receiveInt is a goroutine that listens for pending messages, and sends
-// them out to the relevant clients.
+// them to the connected clients, buffers them for all known clients.
 func (h *Hub) receiveInt() {
 	fLog := aLog.New("fn", "hub.receiveInt")
 
@@ -84,29 +84,28 @@ readingLoop:
 		fLog.Debug("Selecting")
 
 		select {
-		case msg := <-h.Timeout:
+		case c := <-h.Timeout:
 			// The superhub's client reconnection timer has fired
-			c := msg.Client
 			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 			caseLog.Debug("Reconnection timed out")
-			if cOther := h.other(c); cOther != nil {
-				caseLog.Debug("Client has been replaced; ignoring",
-					"cOtherID", cOther.ID, "cOtherRef", cOther.Ref)
+			if !h.known(c) {
+				caseLog.Debug("Client is not known; ignoring")
 				continue
 			}
 
 			// We have a leaver
-			caseLog.Debug("Timed-out client becomes a leaver")
+			caseLog.Debug("Timed-out client is a leaver; removing")
+			h.remove(c)
+			delete(h.clients, c)
 
-			if len(h.clients) == 0 && msg.Remaining == 0 {
-				caseLog.Debug("No more clients timing out or in hub; exiting")
+			if len(h.clients) == 0 {
+				caseLog.Debug("That was the last client; exiting")
 				break readingLoop
 			}
 
 			// Send a leaver message to remaining clients
 			h.leaver(c)
 			h.num++
-			h.buffer.Remove(c.ID)
 			caseLog.Debug("Sent leaver messages")
 
 		case msg := <-h.Pending:
@@ -117,8 +116,10 @@ readingLoop:
 				!h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client but bad lastnum; eject client
 				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("New client but bad num", "num", msg.From.Num)
+				// Start the client sending messages, but shut it down
+				// immediately, without it ever joining our known client list
 				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 				c.Pending <- &Message{
 					Env: &Envelope{Intent: "BadLastnum"},
@@ -130,87 +131,85 @@ readingLoop:
 				h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
 				// Give the new client its initial queue to start it off
-				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 
-				// Add the client to our list
-				h.clients[c] = true
-
-				// Shut down old client
-				h.removeSafely(cOld)
+				// Let the new client replace the old client and start it off
+				h.replace(c, h.buffer.Queue(c.ID, c.Num), cOld)
 
 			case msg.Env.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
 				msg.From.Num < 0:
 				// New client for old ID, but didn't ask to take over
 				c := msg.From
-				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref)
 				cOld := h.other(msg.From)
-				caseLog.Debug("New client while old present, but no takeover",
+				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref,
 					"oldcref", cOld.Ref)
-				h.removeSafely(cOld)
-				caseLog.Debug("Sending leaver messages")
+				caseLog.Debug("New client while old present, but no takeover")
+
+				// First remove the old client
+				h.remove(cOld)
+
+				// Next, send leaver messages to all the clients
 				h.leaver(cOld)
 				h.num++
-				h.buffer.Remove(cOld.ID)
 
-				caseLog.Debug("Sending joiner messages")
+				// Then add the new client and start it going with an
+				// empty queue
+				h.connect(c, NewQueue())
+
+				// Finally send joiner/welcome messages
 				h.joiner(c)
-
-				// Set the new client going with an empty queue, send it
-				// a welcome message, and add it to our client list
-				c.InitialQueue <- NewQueue()
-				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
 				h.num++
-				h.clients[c] = true
 
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
 				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog.Debug("New joiner")
 
-				// Send joiner message to other clients
-				caseLog.Debug("Sending joiner messages")
+				// Connect the new client
+				h.connect(c, NewQueue())
+
+				// Send joiner and welcome messages
 				h.joiner(c)
-
-				// Set the new client going with an empty queue, send it
-				// a welcome message, and add it to our client list
-				c.InitialQueue <- NewQueue()
-				caseLog.Debug("Sending welcome message")
 				h.welcome(c)
 				h.num++
-				h.clients[c] = true
 
 			case msg.Env.Intent == "LostConnection":
 				// A client receiver has lost the connection
 				c := msg.From
-				fLog.Debug("Got lost connection",
-					"fromcid", c.ID, "fromcref", c.Ref)
-				h.removeSafely(c)
+				fLog.Debug("Got lost connection", "cid", c.ID, "cref", c.Ref)
+				h.disconnect(c)
 
 			case msg.Env.Intent == "Peer":
 				// We have a peer message
 				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("Got peer msg", "content", string(msg.Env.Body))
 
 				toCls := h.exclude(c)
-				msg.Env.From = []string{c.ID}
-				msg.Env.To = ids(toCls)
-				msg.Env.Num = h.num
-				msg.Env.Time = time.Now().Unix()
-				msg.Env.Intent = "Peer"
+				now := time.Now().Unix()
+				msgP := &Message{
+					From: msg.From,
+					Env: &Envelope{
+						From:   []string{c.ID},
+						To:     ids(toCls),
+						Num:    h.num,
+						Time:   now,
+						Intent: "Peer",
+						Body:   msg.Env.Body,
+					},
+				}
 
 				caseLog.Debug("Sending peer messages")
 				for _, cl := range toCls {
 					caseLog.Debug("Sending peer msg", "tocid", cl.ID)
-					h.buffer.Add(cl.ID, msg.Env)
-					cl.Pending <- msg
+					h.send(cl, msgP)
 				}
 
 				caseLog.Debug("Sending receipt")
@@ -225,8 +224,9 @@ readingLoop:
 						Body:   msg.Env.Body,
 					},
 				}
-				h.buffer.Add(c.ID, msgR.Env)
-				c.Pending <- msgR
+				h.send(c, msgR)
+
+				// Set the next message num
 				h.num++
 
 			default:
@@ -251,16 +251,73 @@ func (h *Hub) canFulfill(id string, num int) bool {
 	return num < 0 || num == h.num || h.buffer.Available(id, num)
 }
 
-// remove a given client
-func (h *Hub) removeSafely(c *Client) {
-	if h.clients[c] {
+// Is a client known and connected?
+func (h *Hub) connected(c *Client) bool {
+	return h.clients[c]
+}
+
+// Is a client known and disconnected?
+func (h *Hub) disconnected(c *Client) bool {
+	conn, ok := h.clients[c]
+	return ok && !conn
+}
+
+// Is a client known?
+func (h *Hub) known(c *Client) bool {
+	_, ok := h.clients[c]
+	return ok
+}
+
+// remove a client from the list of known clients. This like replace,
+// but there's no new client, so the buffer is lost.
+func (h *Hub) remove(c *Client) {
+	aLog.Debug("Removing client", "fn", "hub.remove",
+		"cid", c.ID, "cref", c.Ref)
+	delete(h.clients, c)
+	h.buffer.Remove(c.ID)
+}
+
+// connect a client and start it going with a given queue
+func (h *Hub) connect(c *Client, q *Queue) {
+	aLog.Debug("Connecting client", "fn", "hub.connect",
+		"cid", c.ID, "cref", c.Ref)
+	h.clients[c] = true
+	c.InitialQueue <- q
+}
+
+// disconnect a given client
+func (h *Hub) disconnect(c *Client) {
+	aLog.Debug("Disconnecting client", "fn", "hub.connect",
+		"cid", c.ID, "cref", c.Ref)
+	if h.connected(c) {
 		close(c.Pending)
 	}
-	delete(h.clients, c)
+	h.clients[c] = false
+}
+
+// Replace has a new (connected) client replacing an old one. The old one is
+// shut down if it's still connected. The new client is started off with
+// the given queue.
+func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
+	fLog := aLog.New("fn", "hub.replace", "cnewref", cNew.Ref,
+		"coldref", cOld.Ref)
+	fLog.Debug("Replacing client")
+	if !h.known(cOld) {
+		fLog.Warn("Old client not known")
+		return
+	}
+	if h.connected(cOld) {
+		fLog.Debug("Closing old channel")
+		close(cOld.Pending)
+	}
+	delete(h.clients, cOld)
+	h.clients[cNew] = true
 }
 
 // welcome sends a Welcome message to just this client.
 func (h *Hub) welcome(c *Client) {
+	aLog.Debug("Sending welcome", "fn", "hub.welcome",
+		"cid", c.ID, "cref", c.Ref)
 	msg := &Message{
 		From:  c,
 		MType: websocket.BinaryMessage,
@@ -276,8 +333,10 @@ func (h *Hub) welcome(c *Client) {
 	c.Pending <- msg
 }
 
-// joiner sends a Joiner message to all clients, about joiner c.
+// joiner sends a Joiner message to all clients (except c), about joiner c.
 func (h *Hub) joiner(c *Client) {
+	aLog.Debug("Sending joiner messages", "fn", "hub.joiner",
+		"cid", c.ID, "cref", c.Ref)
 	msg := &Message{
 		From:  c,
 		MType: websocket.BinaryMessage,
@@ -291,13 +350,16 @@ func (h *Hub) joiner(c *Client) {
 	}
 
 	for cl, _ := range h.clients {
-		h.buffer.Add(cl.ID, msg.Env)
-		cl.Pending <- msg
+		if cl != c {
+			h.send(cl, msg)
+		}
 	}
 }
 
-// leaver message sent to all clients, about leaver c.
+// leaver message sent to all clients about leaver c.
 func (h *Hub) leaver(c *Client) {
+	aLog.Debug("Sending leaver messages", "fn", "hub.leaver",
+		"cid", c.ID, "cref", c.Ref)
 	msg := &Message{
 		From:  c,
 		MType: websocket.BinaryMessage,
@@ -310,8 +372,15 @@ func (h *Hub) leaver(c *Client) {
 		},
 	}
 	for cl, _ := range h.clients {
-		h.buffer.Add(cl.ID, msg.Env)
-		cl.Pending <- msg
+		h.send(cl, msg)
+	}
+}
+
+// send an envelope to a client (if it's connected) and buffer it (either way).
+func (h *Hub) send(c *Client, msg *Message) {
+	h.buffer.Add(c.ID, msg.Env)
+	if h.connected(c) {
+		c.Pending <- msg
 	}
 }
 

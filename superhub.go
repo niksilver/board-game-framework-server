@@ -95,12 +95,8 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 					return
 				}
 			}
-			rem := len(sh.tOut[h])
-			h.Timeout <- &TimeoutMsg{
-				Client:    c,
-				Remaining: rem,
-			}
-			fLog.Debug("Sent timeout for client", "remaining", rem)
+			h.Timeout <- c
+			fLog.Debug("Sent timeout for client")
 		})
 
 	fLog.Debug("Exiting")
