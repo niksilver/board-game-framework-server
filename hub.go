@@ -29,12 +29,11 @@ type Hub struct {
 	buffer *Buffer
 }
 
-// Message is something that the Hub needs to bounce out to clients
-// other than the sender.
+// Message is what is received from a Client.
 type Message struct {
-	From  *Client
-	MType int
-	Env   *Envelope
+	From   *Client
+	Intent string
+	Body   []byte
 }
 
 // Envelope is the structure for messages sent to clients. Other than
@@ -109,7 +108,7 @@ readingLoop:
 			fLog.Debug("Received pending message")
 
 			switch {
-			case msg.Env.Intent == "Joiner" &&
+			case msg.Intent == "Joiner" &&
 				!h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client but bad lastnum; eject client
 				c := msg.From
@@ -122,7 +121,7 @@ readingLoop:
 				c.Pending <- &Envelope{Intent: "BadLastnum"}
 				close(c.Pending)
 
-			case msg.Env.Intent == "Joiner" &&
+			case msg.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
 				h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
@@ -134,7 +133,7 @@ readingLoop:
 				// Let the new client replace the old client and start it off
 				h.replace(c, h.buffer.Queue(c.ID, c.Num), cOld)
 
-			case msg.Env.Intent == "Joiner" &&
+			case msg.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
 				msg.From.Num < 0:
 				// New client for old ID, but didn't ask to take over
@@ -160,7 +159,7 @@ readingLoop:
 				h.welcome(c)
 				h.num++
 
-			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
+			case msg.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
@@ -174,17 +173,17 @@ readingLoop:
 				h.welcome(c)
 				h.num++
 
-			case msg.Env.Intent == "LostConnection":
+			case msg.Intent == "LostConnection":
 				// A client receiver has lost the connection
 				c := msg.From
 				fLog.Debug("Got lost connection", "cid", c.ID, "cref", c.Ref)
 				h.disconnect(c)
 
-			case msg.Env.Intent == "Peer":
+			case msg.Intent == "Peer":
 				// We have a peer message
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
-				caseLog.Debug("Got peer msg", "content", string(msg.Env.Body))
+				caseLog.Debug("Got peer msg", "content", string(msg.Body))
 
 				toCls := h.exclude(c)
 				now := time.Now().Unix()
@@ -194,7 +193,7 @@ readingLoop:
 					Num:    h.num,
 					Time:   now,
 					Intent: "Peer",
-					Body:   msg.Env.Body,
+					Body:   msg.Body,
 				}
 
 				caseLog.Debug("Sending peer messages")

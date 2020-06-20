@@ -165,16 +165,14 @@ func (c *Client) receiveExt() {
 
 	// First send a joiner message
 	c.Hub.Pending <- &Message{
-		From: c,
-		Env: &Envelope{
-			Intent: "Joiner",
-		},
+		From:   c,
+		Intent: "Joiner",
 	}
 
 	// Read messages until we can no more
 	for {
 		fLog.Debug("Reading")
-		mType, msg, err := c.WS.ReadMessage()
+		_, msg, err := c.WS.ReadMessage()
 		if err != nil {
 			fLog.Debug("Read error", "error", err)
 			break
@@ -182,12 +180,9 @@ func (c *Client) receiveExt() {
 		// Currently just passes on the message type
 		fLog.Debug("Read is good", "content", string(msg))
 		c.Hub.Pending <- &Message{
-			From:  c,
-			MType: mType,
-			Env: &Envelope{
-				Intent: "Peer",
-				Body:   msg,
-			},
+			From:   c,
+			Intent: "Peer",
+			Body:   msg,
 		}
 	}
 
@@ -197,10 +192,8 @@ func (c *Client) receiveExt() {
 	fLog.Debug("Closing conn")
 	c.WS.Close()
 	c.Hub.Pending <- &Message{
-		From: c,
-		Env: &Envelope{
-			Intent: "LostConnection",
-		},
+		From:   c,
+		Intent: "LostConnection",
 	}
 }
 
