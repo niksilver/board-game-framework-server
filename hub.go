@@ -96,7 +96,6 @@ readingLoop:
 			// We have a leaver
 			caseLog.Debug("Timed-out client is a leaver; removing")
 			h.remove(c)
-			delete(h.clients, c)
 
 			if len(h.clients) == 0 {
 				caseLog.Debug("That was the last client; exiting")
@@ -169,7 +168,7 @@ readingLoop:
 			case msg.Env.Intent == "Joiner" && h.other(msg.From) == nil:
 				// New joiner
 				c := msg.From
-				caseLog := fLog.New("fromcid", c.ID, "fromcref", c.Ref)
+				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("New joiner")
 
 				// Connect the new client
@@ -208,7 +207,7 @@ readingLoop:
 
 				caseLog.Debug("Sending peer messages")
 				for _, cl := range toCls {
-					caseLog.Debug("Sending peer msg", "tocid", cl.ID)
+					caseLog.Debug("Sending peer msg", "tocref", cl.Ref)
 					h.send(cl, msgP)
 				}
 
@@ -295,9 +294,9 @@ func (h *Hub) disconnect(c *Client) {
 	h.clients[c] = false
 }
 
-// Replace has a new (connected) client replacing an old one. The old one is
-// shut down if it's still connected. The new client is started off with
-// the given queue.
+// Replace has a new (connected) client replacing an old one.
+// The old one is shut down if it's still connected and forgotten about.
+// The new client is started off with the given queue.
 func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 	fLog := aLog.New("fn", "hub.replace", "cnewref", cNew.Ref,
 		"coldref", cOld.Ref)
@@ -312,6 +311,7 @@ func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 	}
 	delete(h.clients, cOld)
 	h.clients[cNew] = true
+	cNew.InitialQueue <- qNew
 }
 
 // welcome sends a Welcome message to just this client.

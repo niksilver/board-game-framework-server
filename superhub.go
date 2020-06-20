@@ -89,12 +89,6 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 			sh.tOut[h] = remove(sh.tOut[h], c)
 			sh.decrement(h)
 			// Send a timeout unless there's another client with the same ID
-			for _, cOther := range sh.tOut[h] {
-				if cOther.ID == c.ID {
-					fLog.Debug("Found later client", "cOtherref", cOther.Ref)
-					return
-				}
-			}
 			h.Timeout <- c
 			fLog.Debug("Sent timeout for client")
 		})
