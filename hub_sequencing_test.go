@@ -421,14 +421,26 @@ func TestHubSeq_ReconnectingClientsDontMissMessages(t *testing.T) {
 				num = env.Num
 				fLog.Debug("Received", "id", "WS1", "num", num,
 					"intent", env.Intent, "content", string(env.Body))
-				if !gotFirstEnv {
+				switch {
+				case !gotFirstEnv && env.Intent == "Welcome":
 					fLog.Debug("Listener got first envelope", "id", "WS1")
 					gotFirstEnv = true
 					// Signal to the sender it can start sending
 					close(listenerReady)
-				}
-				if env.Intent == "Peer" {
+				case !gotFirstEnv && env.Intent != "Welcome":
+					t.Fatalf("Unexpected first env: intent=%s, body=%s",
+						env.Intent, string(env.Body))
+				case gotFirstEnv && env.Intent == "Joiner":
+					fLog.Debug("Listener got Joiner message")
+				case gotFirstEnv && env.Intent == "Peer":
+					fLog.Debug("Listener got Peer", "body", string(env.Body))
 					rcvd = append(rcvd, string(env.Body))
+				case gotFirstEnv && env.Intent == "Leaver" &&
+					env.From[0] == "WS2":
+					fLog.Debug("Listener got WS2 Leaver message")
+				default:
+					t.Fatalf("Unexpected later env: from=%v, to=%v, intent=%s, body=%s",
+						env.From, env.To, env.Intent, string(env.Body))
 				}
 			}
 		}
@@ -638,5 +650,101 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	tws1b.close()
 
 	// Wait for all processes to finish
+	WG.Wait()
+}
+
+// If a client takes over an old client, and the old client signals
+// a disconnection, then the leaver list should always have clients
+// with unique IDs.
+func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Initial values
+	game := "/hub.takeovers"
+	w := sync.WaitGroup{}
+
+	// For some ID, we'll have one client join, a second take over,
+	// the first disconnect anyway, and the second leave after a bit.
+
+	joinAndTakeOver := func(id string) {
+		defer w.Done()
+
+		ws1, _, err := dial(serv, game, id, -1)
+		defer ws1.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		tws1 := newTConn(ws1, id)
+		env, err := tws1.readEnvelope(500, "Assumed Welcome")
+		if err != nil {
+			t.Fatalf("Didn't get Welcome; id=%s, err=%s", id, err.Error())
+		}
+		lastnum := env.Num
+
+		// Have the second take over
+
+		ws2, _, err := dial(serv, game, id, lastnum)
+		if err != nil {
+			t.Fatalf("Error taking over id=%s, err=%s", id, err.Error())
+		}
+		defer ws2.Close()
+
+		// Close the first, pause, then close the second
+		tws1.close()
+		time.Sleep(100 * time.Millisecond)
+		ws2.Close()
+	}
+
+	// Check all IDs in a list are unique
+	checkIDs := func(ids []string, intent string, field string) {
+		u := make(map[string]bool)
+		for _, id := range ids {
+			if u[id] {
+				t.Errorf("Found duplicate ID %s in %s (%s): %v",
+					id, intent, field, ids)
+			}
+			u[id] = true
+		}
+	}
+
+	// Create a client that will listen and check envelopes
+	ws0, _, err := dial(serv, game, "JTOLISTENER", -1)
+	defer ws0.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws0 := newTConn(ws0, "JTOLISTENER")
+
+	// Set off 24 joiners-and-take-overers
+	// (There's a limit of 50 clients, and each of these is two)
+	for i := 0; i < 24; i++ {
+		w.Add(1)
+		go joinAndTakeOver("JTO" + strconv.Itoa(i))
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Listen and check for 40 messages (though there will be more)
+	for i := 0; i < 40; i++ {
+		env, err := tws0.readEnvelope(500, "Assumed Welcome")
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkIDs(env.From, env.Intent, "From")
+		checkIDs(env.To, env.Intent, "To")
+	}
+
+	// Shut down
+	tws0.close()
+	w.Wait()
 	WG.Wait()
 }
