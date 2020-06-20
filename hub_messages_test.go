@@ -6,9 +6,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"math/rand"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"

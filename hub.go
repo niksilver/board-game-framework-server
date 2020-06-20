@@ -6,8 +6,6 @@ package main
 
 import (
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // Hub collects all related clients
@@ -117,12 +115,11 @@ readingLoop:
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("New client but bad num", "num", msg.From.Num)
+
 				// Start the client sending messages, but shut it down
 				// immediately, without it ever joining our known client list
 				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
-				c.Pending <- &Message{
-					Env: &Envelope{Intent: "BadLastnum"},
-				}
+				c.Pending <- &Envelope{Intent: "BadLastnum"}
 				close(c.Pending)
 
 			case msg.Env.Intent == "Joiner" &&
@@ -133,8 +130,6 @@ readingLoop:
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				cOld := h.other(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
-
-				// Give the new client its initial queue to start it off
 
 				// Let the new client replace the old client and start it off
 				h.replace(c, h.buffer.Queue(c.ID, c.Num), cOld)
@@ -193,37 +188,31 @@ readingLoop:
 
 				toCls := h.exclude(c)
 				now := time.Now().Unix()
-				msgP := &Message{
-					From: msg.From,
-					Env: &Envelope{
-						From:   []string{c.ID},
-						To:     ids(toCls),
-						Num:    h.num,
-						Time:   now,
-						Intent: "Peer",
-						Body:   msg.Env.Body,
-					},
+				envP := &Envelope{
+					From:   []string{c.ID},
+					To:     ids(toCls),
+					Num:    h.num,
+					Time:   now,
+					Intent: "Peer",
+					Body:   msg.Env.Body,
 				}
 
 				caseLog.Debug("Sending peer messages")
 				for _, cl := range toCls {
 					caseLog.Debug("Sending peer msg", "tocref", cl.Ref)
-					h.send(cl, msgP)
+					h.send(cl, envP)
 				}
 
 				caseLog.Debug("Sending receipt")
-				msgR := &Message{
-					From: c,
-					Env: &Envelope{
-						From:   msgP.Env.From,
-						To:     msgP.Env.To,
-						Num:    msgP.Env.Num,
-						Time:   msgP.Env.Time,
-						Intent: "Receipt",
-						Body:   msgP.Env.Body,
-					},
+				envR := &Envelope{
+					From:   envP.From,
+					To:     envP.To,
+					Num:    envP.Num,
+					Time:   envP.Time,
+					Intent: "Receipt",
+					Body:   envP.Body,
 				}
-				h.send(c, msgR)
+				h.send(c, envR)
 
 				// Set the next message num
 				h.num++
@@ -318,40 +307,32 @@ func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 func (h *Hub) welcome(c *Client) {
 	aLog.Debug("Sending welcome", "fn", "hub.welcome",
 		"cid", c.ID, "cref", c.Ref)
-	msg := &Message{
-		From:  c,
-		MType: websocket.BinaryMessage,
-		Env: &Envelope{
-			To:     []string{c.ID},
-			From:   h.excludeID(c),
-			Num:    h.num,
-			Time:   time.Now().Unix(),
-			Intent: "Welcome",
-		},
+	env := &Envelope{
+		To:     []string{c.ID},
+		From:   h.excludeID(c),
+		Num:    h.num,
+		Time:   time.Now().Unix(),
+		Intent: "Welcome",
 	}
-	h.buffer.Add(c.ID, msg.Env)
-	c.Pending <- msg
+	h.buffer.Add(c.ID, env)
+	c.Pending <- env
 }
 
 // joiner sends a Joiner message to all clients (except c), about joiner c.
 func (h *Hub) joiner(c *Client) {
 	aLog.Debug("Sending joiner messages", "fn", "hub.joiner",
 		"cid", c.ID, "cref", c.Ref)
-	msg := &Message{
-		From:  c,
-		MType: websocket.BinaryMessage,
-		Env: &Envelope{
-			From:   []string{c.ID},
-			To:     h.excludeID(c),
-			Num:    h.num,
-			Time:   time.Now().Unix(),
-			Intent: "Joiner",
-		},
+	env := &Envelope{
+		From:   []string{c.ID},
+		To:     h.excludeID(c),
+		Num:    h.num,
+		Time:   time.Now().Unix(),
+		Intent: "Joiner",
 	}
 
 	for cl, _ := range h.clients {
 		if cl != c {
-			h.send(cl, msg)
+			h.send(cl, env)
 		}
 	}
 }
@@ -360,27 +341,23 @@ func (h *Hub) joiner(c *Client) {
 func (h *Hub) leaver(c *Client) {
 	aLog.Debug("Sending leaver messages", "fn", "hub.leaver",
 		"cid", c.ID, "cref", c.Ref)
-	msg := &Message{
-		From:  c,
-		MType: websocket.BinaryMessage,
-		Env: &Envelope{
-			From:   []string{c.ID},
-			To:     h.allIDs(),
-			Num:    h.num,
-			Time:   time.Now().Unix(),
-			Intent: "Leaver",
-		},
+	env := &Envelope{
+		From:   []string{c.ID},
+		To:     h.allIDs(),
+		Num:    h.num,
+		Time:   time.Now().Unix(),
+		Intent: "Leaver",
 	}
 	for cl, _ := range h.clients {
-		h.send(cl, msg)
+		h.send(cl, env)
 	}
 }
 
 // send an envelope to a client (if it's connected) and buffer it (either way).
-func (h *Hub) send(c *Client, msg *Message) {
-	h.buffer.Add(c.ID, msg.Env)
+func (h *Hub) send(c *Client, env *Envelope) {
+	h.buffer.Add(c.ID, env)
 	if h.connected(c) {
-		c.Pending <- msg
+		c.Pending <- env
 	}
 }
 

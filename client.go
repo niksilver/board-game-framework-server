@@ -44,9 +44,9 @@ type Client struct {
 	queue *Queue
 	// Channel to receive the initial queue
 	InitialQueue chan *Queue
-	// To receive internal message from the hub. The hub will close it
-	// once it knows the client wants to stop.
-	Pending chan *Message
+	// To receive a message from the hub. The hub will close the channel
+	// to indicate the client should disconnect and shut down.
+	Pending chan *Envelope
 	// pinger ticks for pinging
 	pinger *time.Ticker
 }
@@ -257,27 +257,27 @@ func (c *Client) connectedWithQueued() bool {
 	for {
 		fLog.Debug("Entering select")
 		select {
-		case m, ok := <-c.Pending:
+		case env, ok := <-c.Pending:
 			fLog.Debug("Got pending")
 			if !ok {
 				// Channel closed, we need to shut down
 				fLog.Debug("Channel closed")
 				return false
 			}
-			if m.Env.Intent == "LostConnection" {
+			if env.Intent == "LostConnection" {
 				// This message is for us
 				fLog.Debug("Got LostConnection intent")
 				return false
 			}
-			if m.Env.Intent == "BadLastnum" {
+			if env.Intent == "BadLastnum" {
 				// This message is for us
 				fLog.Debug("Got BadLastnum intent")
 				c.closeWith("Bad lastnum")
 				return false
 			}
 			// Message needs to go onto the queue
-			fLog.Debug("Adding to queue", "env", niceEnv(m.Env))
-			c.queue.Add(m.Env)
+			fLog.Debug("Adding to queue", "env", niceEnv(env))
+			c.queue.Add(env)
 
 		case <-c.pinger.C:
 			fLog.Debug("Sending ping")
@@ -331,37 +331,37 @@ func (c *Client) connectedNoneQueued() {
 	for {
 		fLog.Debug("Entering select")
 		select {
-		case m, ok := <-c.Pending:
+		case env, ok := <-c.Pending:
 			fLog.Debug("Got pending")
 			if !ok {
 				// Channel closed, we need to shut down
 				fLog.Debug("Channel closed")
 				return
 			}
-			if m.Env.Intent == "LostConnection" {
+			if env.Intent == "LostConnection" {
 				fLog.Debug("Got LostConnection intent")
 				return
 			}
-			if m.Env.Intent == "BadLastnum" {
+			if env.Intent == "BadLastnum" {
 				// This message is for us
 				fLog.Debug("Got BadLastnum intent")
 				c.closeWith("Bad lastnum")
 				return
 			}
 			// We should send this message
-			fLog.Debug("Got envelope", "env", niceEnv(m.Env))
+			fLog.Debug("Got envelope", "env", niceEnv(env))
 			if err := c.WS.SetWriteDeadline(
 				time.Now().Add(writeTimeout)); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("Deadline error", "err", err)
 				return
 			}
-			if err := c.WS.WriteJSON(m.Env); err != nil {
+			if err := c.WS.WriteJSON(env); err != nil {
 				// Write error, move to disconnected state
 				fLog.Debug("WriteJSON error", "err", err)
 				return
 			}
-			fLog.Debug("Wrote JSON", "env", niceEnv(m.Env))
+			fLog.Debug("Wrote JSON", "env", niceEnv(env))
 		case <-c.pinger.C:
 			fLog.Debug("Sending ping")
 			if err := c.WS.SetWriteDeadline(
