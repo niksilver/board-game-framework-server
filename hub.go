@@ -323,7 +323,7 @@ func (h *Hub) welcome(c *Client) {
 		MType: websocket.BinaryMessage,
 		Env: &Envelope{
 			To:     []string{c.ID},
-			From:   h.excludeIDs(c),
+			From:   h.excludeID(c),
 			Num:    h.num,
 			Time:   time.Now().Unix(),
 			Intent: "Welcome",
@@ -342,7 +342,7 @@ func (h *Hub) joiner(c *Client) {
 		MType: websocket.BinaryMessage,
 		Env: &Envelope{
 			From:   []string{c.ID},
-			To:     h.allIDs(),
+			To:     h.excludeID(c),
 			Num:    h.num,
 			Time:   time.Now().Unix(),
 			Intent: "Joiner",
@@ -398,8 +398,8 @@ func (h *Hub) exclude(cx *Client) []*Client {
 	return cOut
 }
 
-// excludeIDs finds the IDs of all clients which aren't the given client.
-func (h *Hub) excludeIDs(cx *Client) []string {
+// excludeID finds the IDs of all clients which aren't the given client.
+func (h *Hub) excludeID(cx *Client) []string {
 	aLog.Debug("hub.excludeIDs, entering")
 	cOut := make([]string, 0)
 	for c, _ := range h.clients {
