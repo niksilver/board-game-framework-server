@@ -259,7 +259,6 @@ func (h *Hub) remove(c *Client) {
 		"cid", c.ID, "cref", c.Ref)
 	delete(h.clients, c)
 	h.buffer.Remove(c.ID)
-	aLog.Debug("Exiting", "allids", h.allIDs())
 }
 
 // connect a client and start it going with a given queue
@@ -268,7 +267,6 @@ func (h *Hub) connect(c *Client, q *Queue) {
 		"cid", c.ID, "cref", c.Ref)
 	h.clients[c] = true
 	c.InitialQueue <- q
-	aLog.Debug("Exiting", "allids", h.allIDs())
 }
 
 // disconnect a given client
@@ -282,7 +280,6 @@ func (h *Hub) disconnect(c *Client) {
 	if h.known(c) {
 		h.clients[c] = false
 	}
-	aLog.Debug("Exiting", "allids", h.allIDs())
 }
 
 // Replace has a new (connected) client replacing an old one.
@@ -303,7 +300,6 @@ func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 	delete(h.clients, cOld)
 	h.clients[cNew] = true
 	cNew.InitialQueue <- qNew
-	fLog.Debug("Exiting", "allids", h.allIDs())
 }
 
 // welcome sends a Welcome message to just this client.
@@ -319,7 +315,6 @@ func (h *Hub) welcome(c *Client) {
 	}
 	h.buffer.Add(c.ID, env)
 	c.Pending <- env
-	aLog.Debug("Exiting", "allids", h.allIDs())
 }
 
 // joiner sends a Joiner message to all clients (except c), about joiner c.
