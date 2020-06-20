@@ -228,13 +228,6 @@ readingLoop:
 
 // canFullfill says if we can send the next num the client is expecting
 func (h *Hub) canFulfill(id string, num int) bool {
-	pr := "["
-	for _, e := range h.buffer.buf[id] {
-		pr = pr + niceEnv(e)
-	}
-	pr = pr + "]"
-	aLog.Debug("canFulfill", "id", id, "num", num, "buf", pr,
-		"result", num < 0 || num == h.num || h.buffer.Available(id, num))
 	return num < 0 || num == h.num || h.buffer.Available(id, num)
 }
 
@@ -363,27 +356,23 @@ func (h *Hub) send(c *Client, env *Envelope) {
 // exclude finds all clients which aren't the given one.
 // Matching is done on pointers.
 func (h *Hub) exclude(cx *Client) []*Client {
-	aLog.Debug("hub.exclude, entering")
 	cOut := make([]*Client, 0)
 	for c, _ := range h.clients {
 		if c != cx {
 			cOut = append(cOut, c)
 		}
 	}
-	aLog.Debug("hub.exclude, exiting")
 	return cOut
 }
 
 // excludeID finds the IDs of all clients which aren't the given client.
 func (h *Hub) excludeID(cx *Client) []string {
-	aLog.Debug("hub.excludeIDs, entering")
 	cOut := make([]string, 0)
 	for c, _ := range h.clients {
 		if c != cx {
 			cOut = append(cOut, c.ID)
 		}
 	}
-	aLog.Debug("hub.exclude, exiting")
 	return cOut
 }
 
@@ -413,7 +402,9 @@ func (h *Hub) other(c *Client) *Client {
 			continue
 		}
 		if cOther != nil {
-			panic("Found a second client with the same ID: " + c.ID)
+			aLog.Error("Found a second client with the same ID",
+				"fn", "hub.other", "cid", c.ID, "cref", c.Ref,
+				"cotherref", cOther.Ref)
 		}
 		cOther = k
 	}
