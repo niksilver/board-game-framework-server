@@ -276,7 +276,6 @@ func (h *Hub) disconnect(c *Client) {
 	if h.connected(c) {
 		close(c.Pending)
 	}
-	// ERROR HERE! If the client is unknown it will be added!
 	if h.known(c) {
 		h.clients[c] = false
 	}
