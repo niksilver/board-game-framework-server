@@ -47,11 +47,11 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	// Client 1 joins normally
 
 	ws1, _, err := dial(serv, game, "CL1", -1)
-	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "CL1")
+	defer tws1.close()
 	if err := tws1.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1: %s", err)
 	}
@@ -59,11 +59,11 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	// Client 2 joins, and client 1 gets a joiner message
 
 	ws2, _, err := dial(serv, game, "CL2", -1)
-	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "CL2")
+	defer tws2.close()
 	if err = swallowMany(
 		intentExp{"CL2 joining, ws2", tws2, "Welcome"},
 		intentExp{"CL2 joining, ws1", tws1, "Joiner"},
@@ -74,11 +74,11 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	// Client 3 joins, and clients 1 and 2 get joiner messages.
 
 	ws3, _, err := dial(serv, game, "CL3", -1)
-	defer ws3.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws3 := newTConn(ws3, "CL3")
+	defer tws3.close()
 	if err = swallowMany(
 		intentExp{"CL3 joining, ws2", tws3, "Welcome"},
 		intentExp{"CL3 joining, ws1", tws1, "Joiner"},
@@ -536,22 +536,22 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	// Connect the first client
 	game := "/hub.reconn.bad.unsent"
 	ws1a, _, err := dial(serv, game, "REC1", -1)
-	defer ws1a.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws1a := newTConn(ws1a, "REC1")
+	defer tws1a.close()
 	if err := tws1a.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws1a: %s", err)
 	}
 
 	// Connect the second client
 	ws2, _, err := dial(serv, game, "REC2", -1)
-	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws2 := newTConn(ws2, "REC2")
+	defer tws2.close()
 	if err := tws2.swallow("Welcome"); err != nil {
 		t.Fatalf("Welcome error for ws2: %s", err)
 	}
@@ -571,8 +571,8 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error dialling for ws1b: %s", err)
 	}
-	defer ws1b.Close()
 	tws1b := newTConn(ws1b, "REC1")
+	defer tws1b.close()
 	rr, timedOut := tws1b.readMessage(250)
 	if timedOut {
 		t.Fatal("ws1b timed out listening for message")
@@ -611,11 +611,11 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	// Connect a client and read the num
 	game := "/hub.reconn.too.late"
 	ws1a, _, err := dial(serv, game, "REC1", -1)
-	defer ws1a.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws1a := newTConn(ws1a, "REC1")
+	defer tws1a.close()
 	env, err := tws1a.readEnvelope(500, "Assumed Welcome")
 	if err != nil {
 		t.Fatal(err)
@@ -632,8 +632,8 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error dialling for ws1b: %s", err)
 	}
-	defer ws1b.Close()
 	tws1b := newTConn(ws1b, "REC1")
+	defer tws1b.close()
 	rr, timedOut := tws1b.readMessage(250)
 	if timedOut {
 		t.Fatal("ws1b timed out listening for expected close")
@@ -657,6 +657,8 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 // a disconnection, then the leaver list should always have clients
 // with unique IDs.
 func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testing.T) {
+	tLog.Debug("Entering TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections")
+
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
 	oldReconnectionTimeout := reconnectionTimeout
@@ -680,11 +682,11 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 		defer w.Done()
 
 		ws1, _, err := dial(serv, game, id, -1)
-		defer ws1.Close()
 		if err != nil {
 			t.Fatal(err)
 		}
 		tws1 := newTConn(ws1, id)
+		defer tws1.close()
 		env, err := tws1.readEnvelope(500, "Assumed Welcome")
 		if err != nil {
 			t.Fatalf("Didn't get Welcome; id=%s, err=%s", id, err.Error())
@@ -719,11 +721,11 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 
 	// Create a client that will listen and check envelopes
 	ws0, _, err := dial(serv, game, "JTOLISTENER", -1)
-	defer ws0.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws0 := newTConn(ws0, "JTOLISTENER")
+	defer tws0.close()
 
 	// Set off 24 joiners-and-take-overers
 	// (There's a limit of 50 clients, and each of these is two)
@@ -744,6 +746,7 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 	}
 
 	// Shut down
+	tLog.Debug("Waiting for goroutines")
 	tws0.close()
 	w.Wait()
 	WG.Wait()

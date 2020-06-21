@@ -167,11 +167,11 @@ func TestClient_SendsPings(t *testing.T) {
 	}()
 
 	ws, _, err := dial(serv, "/cl.sends.pings", "pingtester", -1)
-	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws := newTConn(ws, "pingtester")
+	defer tws.close()
 
 	// Signal pings
 	pingC := make(chan bool)
@@ -242,11 +242,11 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 	}()
 
 	ws, _, err := dial(serv, "/cl.if.no.pongs", "pongtester", -1)
-	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws := newTConn(ws, "pongtester")
+	defer tws.close()
 
 	// Wait for the client to have connected, and swallow the "Welcome"
 	// message
@@ -295,11 +295,11 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 
 	// Connect the first client, and consume the welcome message
 	ws1, _, err := dial(serv, game, "DUP1", -1)
-	defer ws1.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws1 := newTConn(ws1, "DUP1")
+	defer tws1.close()
 	if err = swallowMany(
 		intentExp{"WS1 joining, ws1", tws1, "Welcome"},
 	); err != nil {
@@ -308,11 +308,11 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 
 	// Connect the second client (will be duped), and consume intro messages
 	ws2a, _, err := dial(serv, game, "DUP2", -1)
-	defer ws2a.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws2a := newTConn(ws2a, "DUP2(a)")
+	defer tws2a.close()
 	if err = swallowMany(
 		intentExp{"DUP2 joining (a), ws2a", tws2a, "Welcome"},
 		intentExp{"DUP2 joining (a), ws1", tws1, "Joiner"},
@@ -322,11 +322,11 @@ func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
 
 	// Connect the third client, which is reusing the ID of the second
 	ws2b, _, err := dial(serv, game, "DUP2", -1)
-	defer ws2b.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws2b := newTConn(ws2b, "DUP2(b)")
+	defer tws2b.close()
 
 	// If ws2a tries to read the connection it should find it's closed
 
@@ -398,11 +398,11 @@ func TestClient_NewClientWithBadLastnumShouldGetClosedConn(t *testing.T) {
 
 	// Connect the client with a silly lastnum
 	ws, _, err := dial(serv, game, "BAD", 1029)
-	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	tws := newTConn(ws, "BAD")
+	defer tws.close()
 	rr, timedOut := tws.readMessage(500)
 	if timedOut {
 		t.Fatal("Timed out, but expected closed connection")
