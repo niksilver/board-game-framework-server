@@ -52,8 +52,8 @@ func init() {
 		log15.LvlFilterHandler(
 			// log15.LvlWarn,
 			log15.LvlDebug,
-			log15.DiscardHandler(),
-			// log15.StdoutHandler,
+			// log15.DiscardHandler(),
+			FlushingStdoutHandler{},
 		))
 }
 
@@ -144,32 +144,36 @@ func newTConn(ws *websocket.Conn, id string) *tConn {
 // because behind the scenes the read operation will still be in progress,
 // and needs to be reused or tidied up.
 func (c *tConn) readMessage(timeout int) (readRes, bool) {
+	fLog := uLog.New("fn", "tConn.readMessage", "id", c.id)
 	if c.readRes == nil {
 		// We're not already running a read, so let's start one
 		c.readRes = make(chan readRes)
 		WG.Add(1)
-		uLog.Debug("tConn.readMessage, entering goroutine", "id", c.id)
+		fLog.Debug("Entering goroutine")
 		go func() {
-			defer uLog.Debug("tConn.readMessage, exited goroutine", "id", c.id)
+			defer fLog.Debug("Exiting goroutine")
 			defer WG.Done()
-			uLog.Debug("tConn.readMessage, reading", "id", c.id)
+			fLog.Debug("Reading")
 			mType, msg, err := c.ws.ReadMessage()
-			uLog.Debug("tConn.readMessage, sending result", "msg", string(msg), "error", err, "id", c.id)
+			fLog.Debug("Sending result", "msg", string(msg), "error", err)
 			c.readRes <- readRes{mType, msg, err}
-			uLog.Debug("tConn.readMessage, sent result", "id", c.id)
+			fLog.Debug("Sent result")
 		}()
 	}
 	// Now wait for a result or a timeout
 	timeoutC := time.After(time.Duration(timeout) * time.Millisecond)
 	c.chReadMx.Lock()
 	defer c.chReadMx.Unlock()
+	fLog.Debug("Selecting")
 	select {
 	case rr := <-c.readRes:
 		// We've got a result from the readMessage operation
 		c.readRes = nil
+		fLog.Debug("Returning read result")
 		return rr, false
 	case <-timeoutC:
 		// We timed out
+		fLog.Debug("Returning timeout")
 		return readRes{}, true
 	}
 }
@@ -202,8 +206,8 @@ func (c *tConn) readEnvelope(timeout int, trace string, a ...interface{}) (*Enve
 // close the `tConn`. Always use this to close the connection, instead
 // of the `Conn.Close()`.
 func (c *tConn) close() {
-	uLog.Debug("tConn.close, entering", "id", c.id)
-	uLog.Debug("tConn.close, closing conn", "id", c.id)
+	fLog := uLog.New("fn", "tConn.close", "id", c.id)
+	fLog.Debug("Entering, closing conn")
 	c.ws.Close()
 	// If tConn.readMessage is running we want to ensure sending to
 	// c.readRes doesn't block.
@@ -216,20 +220,20 @@ func (c *tConn) close() {
 	// lock only after consuming it.
 	// In the second case we can grab the lock then consume it.
 	if c.readRes != nil {
-		uLog.Debug("tConn.close, locking channel read", "id", c.id)
+		fLog.Debug("Locking channel read")
 		c.chReadMx.Lock()
 		// Now either the message has been consumed and the channel is nil,
 		// or there is a message waiting to be consumed.
 		if c.readRes != nil {
-			uLog.Debug("tConn.close, consuming from channel", "id", c.id)
+			fLog.Debug("Consuming from channel")
 			<-c.readRes
-			uLog.Debug("tConn.close, consumed from channel", "id", c.id)
+			fLog.Debug("Consumed from channel")
 			c.readRes = nil
 		}
-		uLog.Debug("tConn.close, unlocking channel read", "id", c.id)
+		fLog.Debug("Unlocking channel read")
 		c.chReadMx.Unlock()
 	}
-	uLog.Debug("tConn.close, exiting", "id", c.id)
+	fLog.Debug("Exiting")
 }
 
 // swallow expects the next message to be of the given intent.
