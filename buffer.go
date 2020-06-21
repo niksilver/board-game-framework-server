@@ -41,7 +41,7 @@ func (b *Buffer) Add(id string, e *Envelope) {
 // (plus a bit for safety).
 func (b *Buffer) Clean() {
 	keep := time.Now().Add(reconnectionTimeout * -11 / 10)
-	keepMs := keep.UnixNano() / 1_000_000
+	keepMs := keep.UnixNano() / 1000000
 	for id, es := range b.buf {
 		for i := range es {
 			if es[i].Time >= keepMs {

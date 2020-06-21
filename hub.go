@@ -224,7 +224,7 @@ readingLoop:
 
 // now in milliseconds past the epock
 func nowMs() int64 {
-	return time.Now().UnixNano() / 1_000_000
+	return time.Now().UnixNano() / 1000000
 }
 
 // canFullfill says if we can send the next num the client is expecting
