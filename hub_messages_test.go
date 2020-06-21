@@ -685,4 +685,9 @@ func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
 		t.Errorf("Expected 90 <= timeDiff <= 200, but got timeDiff %d",
 			timeDiff)
 	}
+
+	tws1.close()
+	ws2.Close()
+	tLog.Debug("TestHubMsgs_TimeIsInMilliseconds, waiting on group")
+	WG.Wait()
 }
