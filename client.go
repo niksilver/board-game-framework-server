@@ -257,11 +257,6 @@ func (c *Client) connectedWithQueued() bool {
 				fLog.Debug("Channel closed")
 				return false
 			}
-			if env.Intent == "LostConnection" {
-				// This message is for us
-				fLog.Debug("Got LostConnection intent")
-				return false
-			}
 			if env.Intent == "BadLastnum" {
 				// This message is for us
 				fLog.Debug("Got BadLastnum intent")
@@ -329,10 +324,6 @@ func (c *Client) connectedNoneQueued() {
 			if !ok {
 				// Channel closed, we need to shut down
 				fLog.Debug("Channel closed")
-				return
-			}
-			if env.Intent == "LostConnection" {
-				fLog.Debug("Got LostConnection intent")
 				return
 			}
 			if env.Intent == "BadLastnum" {
