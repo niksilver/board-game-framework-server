@@ -85,17 +85,21 @@ readingLoop:
 			// The superhub's client reconnection timer has fired
 			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 			caseLog.Debug("Reconnection timed out")
-			h.remove(c)
+			if h.known(c) {
+				// We have a leaver
+				caseLog.Debug("Timed-out client is known; removing")
+				h.remove(c)
+
+				// Send a leaver message to remaining clients
+				h.leaver(c)
+				h.num++
+				caseLog.Debug("Sent leaver messages")
+			}
 
 			if len(h.clients) == 0 {
 				caseLog.Debug("That was the last client; exiting")
 				break readingLoop
 			}
-
-			// Send a leaver message to remaining clients
-			h.leaver(c)
-			h.num++
-			caseLog.Debug("Sent leaver messages")
 
 		case msg := <-h.Pending:
 			fLog.Debug("Received pending message")
