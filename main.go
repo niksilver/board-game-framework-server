@@ -33,7 +33,7 @@ func init() {
 			// log15.LvlInfo,
 			log15.LvlDebug,
 			// log15.DiscardHandler(),
-			log15.StdoutHandler,
+			FlushingStdoutHandler{},
 		))
 }
 
@@ -145,4 +145,15 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprint(w, "Hello, there")
+}
+
+// log15 stdout handler that always flushes its contents to disk
+type FlushingStdoutHandler struct {
+}
+
+func (h FlushingStdoutHandler) Log(r *log15.Record) error {
+	if err := log15.StdoutHandler.Log(r); err != nil {
+		return err
+	}
+	return os.Stdout.Sync()
 }

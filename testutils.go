@@ -46,7 +46,7 @@ func init() {
 			// log15.LvlWarn,
 			log15.LvlDebug,
 			// log15.DiscardHandler(),
-			log15.StdoutHandler,
+			FlushingStdoutHandler{},
 		))
 	uLog.SetHandler(
 		log15.LvlFilterHandler(
