@@ -582,10 +582,10 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 		id := "MAX" + strconv.Itoa(i)
 		ws, _, err := dial(serv, "/hub.max", id, -1)
 		tws := newTConn(ws, id)
-		defer tws.close()
 		if err != nil {
 			t.Fatalf("Couldn't dial, i=%d, error '%s'", i, err.Error())
 		}
+		defer tws.close()
 		twss[i] = tws
 		w.Add(1)
 		go consume(tws, id)

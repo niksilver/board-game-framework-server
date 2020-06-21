@@ -90,6 +90,12 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 			sh.decrement(h)
 			// Send a timeout unless there's another client with the same ID
 			h.Timeout <- c
+			// For testing only...
+			hc := make(map[string]int)
+			for h, c := range sh.counts {
+				hc[sh.names[h]] = c
+			}
+			fLog.Debug("Hubs and counts", "map", hc)
 			fLog.Debug("Sent timeout for client")
 		})
 
@@ -102,6 +108,7 @@ func (sh *Superhub) decrement(h *Hub) {
 	if sh.counts[h] == 0 {
 		aLog.Debug("superhub.decrement, deleting hub", "name", sh.names[h])
 		delete(sh.hubs, sh.names[h])
+		delete(sh.counts, h)
 		delete(sh.names, h)
 		delete(sh.tOut, h)
 	}

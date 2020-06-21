@@ -285,7 +285,7 @@ func TestHubSeq_NonReadingClientsDontBlock(t *testing.T) {
 	// Let the clients join the game
 	for i := 0; i < max; i++ {
 		id := "BL" + strconv.Itoa(i)
-		ws, _, err := dial(serv, "/hub.max", id, -1)
+		ws, _, err := dial(serv, "/hub.non.reading", id, -1)
 		tws := newTConn(ws, id)
 		defer tws.close()
 		if err != nil {
