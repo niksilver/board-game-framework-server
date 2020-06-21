@@ -52,7 +52,7 @@ func (sh *Superhub) Hub(name string) (*Hub, error) {
 	}
 
 	aLog.Debug("superhub.Hub, new hub", "name", name)
-	h := NewHub()
+	h := NewHub(name)
 	sh.hubs[name] = h
 	sh.counts[h] = 1
 	sh.names[h] = name
