@@ -16,13 +16,11 @@ func TestClient_CreatesNewID(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	tLog.Debug("Test1", "Ugly", Ugly)
 	ws, resp, err := dial(serv, "/cl.creates.new.id", "", -1)
 	defer ws.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	tLog.Debug("Test2", "Ugly", Ugly)
 
 	cookies := resp.Cookies()
 	clientID := ClientID(cookies)
@@ -31,12 +29,8 @@ func TestClient_CreatesNewID(t *testing.T) {
 	}
 
 	// Tidy up, and check everything in the main app finishes
-	tLog.Debug("Test3", "Ugly", Ugly)
 	ws.Close()
-	tLog.Debug("Test4", "Ugly", Ugly)
-	WG.Wait1("TestClient_CreatesNewID")
-	tLog.Debug("Test5", "Ugly", Ugly)
-	//WG.Wait()
+	WG.Wait()
 }
 
 func TestClient_ClientIDCookieIsPersistent(t *testing.T) {
@@ -60,8 +54,7 @@ func TestClient_ClientIDCookieIsPersistent(t *testing.T) {
 
 	// Tidy up, and check everything in the main app finishes
 	ws.Close()
-	WG.Wait1("TestClient_ClientIDCookieIsPersistent")
-	//WG.Wait()
+	WG.Wait()
 }
 
 func TestClient_ReusesOldId(t *testing.T) {
@@ -96,8 +89,7 @@ func TestClient_ReusesOldId(t *testing.T) {
 
 	// Tidy up, and check everything in the main app finishes
 	ws.Close()
-	WG.Wait1("TestClient_ReusesOldId")
-	//WG.Wait()
+	WG.Wait()
 }
 
 func TestClient_NewIDsAreDifferent(t *testing.T) {

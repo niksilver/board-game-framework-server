@@ -45,15 +45,15 @@ func init() {
 		log15.LvlFilterHandler(
 			// log15.LvlWarn,
 			log15.LvlDebug,
-			// log15.DiscardHandler(),
-			FlushingStdoutHandler{},
+			log15.DiscardHandler(),
+			// FlushingStdoutHandler{},
 		))
 	uLog.SetHandler(
 		log15.LvlFilterHandler(
 			// log15.LvlWarn,
 			log15.LvlDebug,
-			// log15.DiscardHandler(),
-			FlushingStdoutHandler{},
+			log15.DiscardHandler(),
+			// FlushingStdoutHandler{},
 		))
 }
 
@@ -148,13 +148,11 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 	if c.readRes == nil {
 		// We're not already running a read, so let's start one
 		c.readRes = make(chan readRes)
-		WG.Add("tConn.readMessage-" + c.id)
-		//WG.Add(1)
+		WG.Add(1)
 		fLog.Debug("Entering goroutine")
 		go func() {
 			defer fLog.Debug("Exiting goroutine")
-			WG.Done("tConn.readMessage-" + c.id)
-			//defer WG.Done()
+			defer WG.Done()
 			fLog.Debug("Reading")
 			mType, msg, err := c.ws.ReadMessage()
 			fLog.Debug("Sending result", "msg", string(msg), "error", err)
