@@ -13,6 +13,14 @@ import (
 )
 
 func TestClient_CreatesNewID(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
@@ -34,6 +42,14 @@ func TestClient_CreatesNewID(t *testing.T) {
 }
 
 func TestClient_ClientIDCookieIsPersistent(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 

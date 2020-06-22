@@ -552,15 +552,23 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 		reconnectionTimeout = oldReconnectionTimeout
 	}()
 
-	// Our expected maximum clients
-	twss := make([]*tConn, MaxClients)
+	// Our expected clients, allowing some connections to fail
+	maxTries := 2 * MaxClients
+	twss := make([]*tConn, maxTries)
 
 	// Start a web server
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	// A client should consume messages until done
+	// A client should consume messages until done.
+	// We'll use a wait group to ensure we move on only when all clients
+	// are done, and a concurrency-safe counter to ensure we get to
+	// max number of clients (allowing some to fail, which shouldn't
+	// happen but does, sometimes).
+
 	w := sync.WaitGroup{}
+	c := conCounter{}
+
 	consume := func(tws *tConn, id string) {
 		defer w.Done()
 		for {
@@ -575,10 +583,13 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 			}
 		}
 		tws.close()
+		c.dec()
 	}
 
-	// Let 50 clients join the game
-	for i := 0; i < MaxClients; i++ {
+	// Let 50 clients join the game, but allow for some to fail
+	// (which shouldn't happen, but sometimes does)
+	i := 0
+	for c.get() < MaxClients && i < maxTries {
 		id := "MAX" + strconv.Itoa(i)
 		ws, _, err := dial(serv, "/hub.max", id, -1)
 		tws := newTConn(ws, id)
@@ -588,7 +599,15 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 		defer tws.close()
 		twss[i] = tws
 		w.Add(1)
+		c.inc()
 		go consume(tws, id)
+		i++
+	}
+
+	// Check we've stopped because we've got the max number of clients,
+	// not because we gave up.
+	if c.get() < MaxClients {
+		t.Fatalf("Couldn't connect %d clients; tried %d times", MaxClients, i)
 	}
 
 	// Trying to connect should get a response, but an error response
@@ -615,7 +634,9 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 
 	// Close connections and wait for test goroutines
 	for _, tws := range twss {
-		tws.close()
+		if tws != nil {
+			tws.close()
+		}
 	}
 	w.Wait()
 	tws.close()
