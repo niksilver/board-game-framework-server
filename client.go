@@ -146,12 +146,14 @@ func (c *Client) Start() {
 
 	// Start sending messages externally
 	fLog.Debug("Adding for sendExt")
-	WG.Add(1)
+	// WG.Add(1)
+	WG.Add("client.sendExt-" + c.Ref)
 	go c.sendExt()
 
 	// Start receiving messages from the outside
 	fLog.Debug("Adding for receiveExt")
-	WG.Add(1)
+	WG.Add("client.receiveExt-" + c.Ref)
+	//WG.Add(1)
 	go c.receiveExt()
 }
 
@@ -161,7 +163,8 @@ func (c *Client) receiveExt() {
 	fLog.Debug("Entering")
 
 	defer fLog.Debug("Done")
-	defer WG.Done()
+	defer WG.Done("client.sendExt-" + c.Ref)
+	//defer WG.Done()
 
 	// First send a joiner message
 	c.Hub.Pending <- &Message{
@@ -205,7 +208,8 @@ func (c *Client) sendExt() {
 	fLog.Debug("Entering")
 
 	defer fLog.Debug("Goroutine done")
-	defer WG.Done()
+	defer WG.Done("client.sendExt-" + c.Ref)
+	//defer WG.Done()
 
 	// Keep go through scenarios until we need to shut down this client
 	connected := true

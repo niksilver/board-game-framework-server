@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"sync"
+	//"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/inconshreveable/log15"
@@ -22,10 +22,14 @@ var Shub = NewSuperhub()
 
 // A global wait group, not used in the normal course of things,
 // but useful to wait on when debuggging.
-var WG = sync.WaitGroup{}
+//var WG = sync.WaitGroup{}
+var WG = newTrackingWaitGroup()
 
 // A logger for application-side logging
 var aLog = log15.New("side", "app")
+
+// Get rid of this
+var Ugly = ""
 
 func init() {
 	aLog.SetHandler(
@@ -66,6 +70,7 @@ func main() {
 // bounceHandler sets up a websocket to bounce whatever it receives to
 // other clients in the same game.
 func bounceHandler(w http.ResponseWriter, r *http.Request) {
+	Ugly = "bounceHandler.1"
 	// Create a websocket connection
 	clientID := ClientIDOrNew(r.Cookies())
 	ws, err := Upgrade(w, r, clientID)
@@ -73,6 +78,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		aLog.Warn("Upgrade", "error", err)
 		return
 	}
+	Ugly = "bounceHandler.2"
 
 	// Make sure we can get a hub
 	hub, err := Shub.Hub(r.URL.Path)
@@ -85,6 +91,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err)
 		return
 	}
+	Ugly = "bounceHandler.3"
 
 	// Start the client handler running
 	lastNum := lastNum(r.URL.RawQuery)
@@ -101,8 +108,11 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		Pending:      make(chan *Envelope),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
+	Ugly = "bounceHandler.4"
 	c.Start()
+	Ugly = "bounceHandler.5"
 	aLog.Info("Connected client", "id", clientID, "num", num, "ref", c.Ref)
+	aLog.Info("bounceHandler exiting", "WG.All", WG.All())
 }
 
 // lastNum gets the integer given by the lastnum query parameter,

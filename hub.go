@@ -65,7 +65,8 @@ func NewHub(name string) *Hub {
 // Start starts goroutines running that process the messages.
 func (h *Hub) Start() {
 	aLog.Debug("Adding for receiveInt", "fn", "hub.Start", "name", h.name)
-	WG.Add(1)
+	WG.Add("hub-" + h.name)
+	//WG.Add(1)
 	go h.receiveInt()
 }
 
@@ -75,7 +76,8 @@ func (h *Hub) receiveInt() {
 	fLog := aLog.New("fn", "hub.receiveInt", "name", h.name)
 
 	defer fLog.Debug("Goroutine done")
-	defer WG.Done()
+	WG.Done("hub-" + h.name)
+	//defer WG.Done()
 	fLog.Debug("Entering")
 
 readingLoop:

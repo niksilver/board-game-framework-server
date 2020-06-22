@@ -148,11 +148,13 @@ func (c *tConn) readMessage(timeout int) (readRes, bool) {
 	if c.readRes == nil {
 		// We're not already running a read, so let's start one
 		c.readRes = make(chan readRes)
-		WG.Add(1)
+		WG.Add("tConn.readMessage-" + c.id)
+		//WG.Add(1)
 		fLog.Debug("Entering goroutine")
 		go func() {
 			defer fLog.Debug("Exiting goroutine")
-			defer WG.Done()
+			WG.Done("tConn.readMessage-" + c.id)
+			//defer WG.Done()
 			fLog.Debug("Reading")
 			mType, msg, err := c.ws.ReadMessage()
 			fLog.Debug("Sending result", "msg", string(msg), "error", err)
@@ -336,4 +338,79 @@ func maxLength(a []string, b []string) int {
 		return len(a)
 	}
 	return len(b)
+}
+
+// A tracking WaitGroup
+type TrackingWaitGroup struct {
+	mux      sync.Mutex
+	routines map[string]bool
+	wg       sync.WaitGroup
+	waits    int
+}
+
+func newTrackingWaitGroup() *TrackingWaitGroup {
+	return &TrackingWaitGroup{
+		mux:      sync.Mutex{},
+		routines: make(map[string]bool),
+		wg:       sync.WaitGroup{},
+		waits:    0,
+	}
+}
+
+func (t *TrackingWaitGroup) Add(name string) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
+	t.routines[name] = true
+	tLog.Debug("Adding", "fn", "TrackingWaitingGroup.Add", "name", name, "all", t.all())
+	t.wg.Add(1)
+}
+
+func (t *TrackingWaitGroup) Done(name string) {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+
+	delete(t.routines, name)
+	tLog.Debug("Done", "fn", "TrackingWaitingGroup.Done", "name", name, "all", t.all())
+	t.wg.Done()
+}
+
+func (t *TrackingWaitGroup) Wait1(name string) {
+	t.mux.Lock()
+	t.waits++
+	tLog.Debug("Waiting...", "fn", "TrackingWaitingGroup.Wait", "name", name, "all", t.all())
+	t.mux.Unlock()
+
+	t.wg.Wait()
+
+	t.mux.Lock()
+	tLog.Debug("...Waited", "fn", "TrackingWaitingGroup.Wait", "name", name, "all", t.all())
+	t.mux.Unlock()
+}
+
+func (t *TrackingWaitGroup) Wait() {
+	t.mux.Lock()
+	t.waits++
+	tLog.Debug("Waiting...", "fn", "TrackingWaitingGroup.Wait", "all", t.all())
+	t.mux.Unlock()
+
+	t.wg.Wait()
+
+	t.mux.Lock()
+	tLog.Debug("...Waited", "fn", "TrackingWaitingGroup.Wait", "all", t.all())
+	t.mux.Unlock()
+}
+
+func (t *TrackingWaitGroup) All() string {
+	t.mux.Lock()
+	defer t.mux.Unlock()
+	return t.all()
+}
+
+func (t *TrackingWaitGroup) all() string {
+	var names []string
+	for name, _ := range t.routines {
+		names = append(names, name)
+	}
+	return fmt.Sprintf("{waits:%d,names:%v}", t.waits, names)
 }
