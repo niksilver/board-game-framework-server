@@ -191,7 +191,8 @@ func TestHubSeq_GeneralChaos(t *testing.T) {
 		case i < 10 || action < 0.25:
 			// New client join
 			id := "CHAOS" + strconv.Itoa(i)
-			ws, _, err := dial(serv, "/hub.chaos", id, -1)
+			game := "/hub.chaos." + strconv.Itoa(rand.Intn(2))
+			ws, _, err := dial(serv, game, id, -1)
 			defer func() {
 				ws.Close()
 			}()
