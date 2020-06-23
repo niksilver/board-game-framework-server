@@ -26,7 +26,13 @@ var WG = sync.WaitGroup{}
 
 func main() {
 	// Set the logger -only for when the application runs, as this is in main
-	aLog.SetHandler(log15.StdoutHandler)
+	aLog.SetHandler(
+		log15.LvlFilterHandler(
+			log15.LvlInfo,
+			// log15.LvlDebug,
+			// log15.DiscardHandler(),
+			log15.StdoutHandler,
+		))
 
 	// Handle proof of running
 	http.HandleFunc("/", helloHandler)
