@@ -122,6 +122,7 @@ readingLoop:
 
 			case msg.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
+				msg.From.Num >= 0 &&
 				h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
@@ -142,7 +143,8 @@ readingLoop:
 					"oldcref", cOld.Ref)
 				caseLog.Debug("New client while old present, but no takeover")
 
-				// First remove the old client
+				// First disconnect and remove the old client
+				h.disconnect(cOld)
 				h.remove(cOld)
 
 				// Next, send leaver messages to all the clients
@@ -229,7 +231,7 @@ func nowMs() int64 {
 	return time.Now().UnixNano() / 1000000
 }
 
-// canFullfill says if we can send the next num the client is expecting
+// canFulfill says if we can send the next num the client is expecting
 func (h *Hub) canFulfill(id string, num int) bool {
 	return num < 0 || num == h.num || h.buffer.Available(id, num)
 }

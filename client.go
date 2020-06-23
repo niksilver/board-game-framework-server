@@ -227,6 +227,7 @@ func (c *Client) sendExt() {
 	// true before continuing the shut down.
 	fLog.Debug("Closing conn")
 	c.WS.Close()
+	aLog.Info("Closed connection", "id", c.ID)
 	c.pinger.Stop()
 	fLog.Debug("Waiting for channel close")
 	for {

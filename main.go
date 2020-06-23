@@ -30,10 +30,10 @@ var aLog = log15.New("side", "app")
 func init() {
 	aLog.SetHandler(
 		log15.LvlFilterHandler(
-			// log15.LvlInfo,
-			log15.LvlDebug,
-			log15.DiscardHandler(),
-			// FlushingStdoutHandler{},
+			log15.LvlInfo,
+			// log15.LvlDebug,
+			// log15.DiscardHandler(),
+			FlushingStdoutHandler{},
 		))
 }
 

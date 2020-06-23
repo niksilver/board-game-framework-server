@@ -5,7 +5,6 @@
 package main
 
 import (
-	"encoding/json"
 	"github.com/gorilla/websocket"
 	"sync"
 	"testing"
@@ -282,113 +281,6 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 
 	// Tidy up, and check everything in the main app finishes
 	ws.Close()
-	WG.Wait()
-}
-
-// It might be that when a client joins there is already a client with
-// the same ID in the game.
-// In this case, if the new client can join (by giving a sensible lastnum)
-// the original client should get a closed connection
-// and the new client should take over smoothly.
-func TestClient_IfDuplicateIDConnectsItTakesOver(t *testing.T) {
-	// Just for this test, lower the reconnectionTimeout so that a
-	// Leaver message is triggered reasonably quickly.
-
-	oldReconnectionTimeout := reconnectionTimeout
-	reconnectionTimeout = 250 * time.Millisecond
-	defer func() {
-		reconnectionTimeout = oldReconnectionTimeout
-	}()
-
-	// Start a server
-	serv := newTestServer(bounceHandler)
-	defer serv.Close()
-
-	// Connect 3 clients in turn. Each existing client should
-	// receive a joiner message about each new client.
-
-	game := "/cl.dupe.ids"
-
-	// Connect the first client, and consume the welcome message
-	ws1, _, err := dial(serv, game, "DUP1", -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws1 := newTConn(ws1, "DUP1")
-	defer tws1.close()
-	if err = swallowMany(
-		intentExp{"WS1 joining, ws1", tws1, "Welcome"},
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	// Connect the second client (will be duped), and consume intro messages
-	ws2a, _, err := dial(serv, game, "DUP2", -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws2a := newTConn(ws2a, "DUP2(a)")
-	defer tws2a.close()
-	if err = swallowMany(
-		intentExp{"DUP2 joining (a), ws2a", tws2a, "Welcome"},
-		intentExp{"DUP2 joining (a), ws1", tws1, "Joiner"},
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	// Connect the third client, which is reusing the ID of the second
-	ws2b, _, err := dial(serv, game, "DUP2", -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws2b := newTConn(ws2b, "DUP2(b)")
-	defer tws2b.close()
-
-	// If ws2a tries to read the connection it should find it's closed
-
-	rr, timedOut := tws2a.readMessage(500)
-	if timedOut {
-		t.Fatal("ws2a timed out, but expected closed connection")
-	}
-	if rr.err == nil {
-		t.Fatal("ws2a read connection okay, but expected closed connection")
-	}
-
-	// Now if the first client sends a message, then ws2b should receive it
-
-	message := "Hi dupe"
-	err = ws1.WriteMessage(websocket.BinaryMessage, []byte(message))
-	if err != nil {
-		t.Fatalf("ws1: Error sending message: %s", err)
-	}
-
-	rr, timedOut = tws2b.readMessage(500)
-	if timedOut {
-		t.Fatal("ws2b timed out, but expected to get a message")
-	}
-	if rr.err != nil {
-		t.Fatalf("ws2b: error reading: %s", err)
-	}
-
-	// Unwrap the message and check it
-	env := Envelope{}
-	err = json.Unmarshal(rr.msg, &env)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if env.Intent != "Peer" {
-		t.Errorf(
-			"ws2b: Message intent was '%s' but expected 'Peer'", env.Intent,
-		)
-	}
-	if string(env.Body) != message {
-		t.Errorf("Expected message body '%s' but got '%s'", message, env.Body)
-	}
-
-	// Tidy up, and check everything in the main app finishes
-	ws1.Close()
-	ws2a.Close()
-	ws2b.Close()
 	WG.Wait()
 }
 

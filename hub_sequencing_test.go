@@ -654,6 +654,123 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	WG.Wait()
 }
 
+func TestHubSeq_ReconnWithNoLastNumShouldSignalLeaverAndJoiner(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect the first client
+	game := "/hub.reconn.bad.unsent"
+	ws1a, _, err := dial(serv, game, "NOLAST1", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1a := newTConn(ws1a, "NOLAST1")
+	defer tws1a.close()
+	if err := tws1a.swallow("Welcome"); err != nil {
+		t.Fatalf("Welcome error for ws1a: %s", err)
+	}
+
+	// Connect the second client
+	ws2, _, err := dial(serv, game, "NOLAST2", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws2 := newTConn(ws2, "NOLAST2")
+	defer tws2.close()
+	if err := tws2.swallow("Welcome"); err != nil {
+		t.Fatalf("Welcome error for ws2: %s", err)
+	}
+
+	// The first client should get a joiner message. Record the envelope num
+
+	if err := tws1a.swallow("Joiner"); err != nil {
+		t.Fatal(err)
+	}
+
+	// We'll connect a replacement for ws1a with no lastnum.
+	// We should get a welcome message, and the other client should get
+	// a leaver and then a joiner message.
+	// ws1a should get a closed connection.
+	ws1b, _, err := dial(serv, game, "NOLAST1", -1)
+	if err != nil {
+		t.Fatalf("Error dialling for ws1b: %s", err)
+	}
+	tws1b := newTConn(ws1b, "NOLAST1")
+	defer tws1b.close()
+
+	// Check ws1b gets the welcome message we expect
+	env, err := tws1b.readEnvelope(500, "ws1b expecting Welcome")
+	if err != nil {
+		t.Fatal(err)
+	} else {
+		if env.Intent != "Welcome" {
+			t.Errorf("ws1b expected Welcome, got %s", env.Intent)
+		}
+		if !sameElements(env.From, []string{"NOLAST2"}) {
+			t.Errorf("ws1b expected welcome From [NOLAST2], got %v", env.From)
+		}
+		if !sameElements(env.To, []string{"NOLAST1"}) {
+			t.Errorf("ws1b expected welcome To [NOLAST1], got %v", env.To)
+		}
+	}
+
+	// Check ws2 gets the leaver and joiner messages we expect
+	env, err = tws2.readEnvelope(500, "ws2 expecting Leaver")
+	if err != nil {
+		t.Fatal(err)
+	} else {
+		if env.Intent != "Leaver" {
+			t.Errorf("ws2 expected Leaver, got %s", env.Intent)
+		}
+		if !sameElements(env.From, []string{"NOLAST1"}) {
+			t.Errorf("ws2 expected Leaver From [NOLAST1], got %v", env.From)
+		}
+		if !sameElements(env.To, []string{"NOLAST2"}) {
+			t.Errorf("ws2 expected Leaver From [NOLAST2], got %v", env.To)
+		}
+	}
+	env, err = tws2.readEnvelope(500, "ws2 expecting Joiner")
+	if err != nil {
+		t.Fatal(err)
+	} else {
+		if env.Intent != "Joiner" {
+			t.Errorf("ws2 expected Joiner, got %s", env.Intent)
+		}
+		if !sameElements(env.From, []string{"NOLAST1"}) {
+			t.Errorf("ws2 expected Joiner From [NOLAST1], got %v", env.From)
+		}
+		if !sameElements(env.To, []string{"NOLAST2"}) {
+			t.Errorf("ws2 expected Joiner From [NOLAST2], got %v", env.To)
+		}
+	}
+
+	// Check ws1a gets its connection closed
+	rr, timedOut := tws1a.readMessage(250)
+	if timedOut {
+		t.Fatal("ws1a timed out listening for message")
+	}
+	if rr.err == nil {
+		t.Fatal("ws1a should have got a closed connection, but didn't")
+	}
+
+	// Close the other connections
+	tws1a.close()
+	tws1b.close()
+	tws2.close()
+
+	// Wait for all processes to finish
+	WG.Wait()
+}
+
 // If a client takes over an old client, and the old client signals
 // a disconnection, then the leaver list should always have clients
 // with unique IDs.
