@@ -24,19 +24,6 @@ var Shub = NewSuperhub()
 // but useful to wait on when debuggging.
 var WG = sync.WaitGroup{}
 
-// A logger for application-side logging
-var aLog = log15.New("side", "app")
-
-func init() {
-	aLog.SetHandler(
-		log15.LvlFilterHandler(
-			log15.LvlInfo,
-			// log15.LvlDebug,
-			// log15.DiscardHandler(),
-			FlushingStdoutHandler{},
-		))
-}
-
 func main() {
 	// Set the logger -only for when the application runs, as this is in main
 	aLog.SetHandler(log15.StdoutHandler)
@@ -150,15 +137,4 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprint(w, "Hello, there")
-}
-
-// log15 stdout handler that always flushes its contents to disk
-type FlushingStdoutHandler struct {
-}
-
-func (h FlushingStdoutHandler) Log(r *log15.Record) error {
-	if err := log15.StdoutHandler.Log(r); err != nil {
-		return err
-	}
-	return os.Stdout.Sync()
 }

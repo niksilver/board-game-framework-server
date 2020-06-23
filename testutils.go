@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/inconshreveable/log15"
 )
 
 // tConn is a websocket.Conn whose ReadMessage can time out safely
@@ -32,29 +31,6 @@ type readRes struct {
 	mType int
 	msg   []byte
 	err   error
-}
-
-// tLog is a logger for our tests only.
-var tLog = log15.New("side", "test")
-
-// uLog is a logger for our these utils only.
-var uLog = log15.New("side", "utils")
-
-func init() {
-	tLog.SetHandler(
-		log15.LvlFilterHandler(
-			// log15.LvlWarn,
-			log15.LvlDebug,
-			log15.DiscardHandler(),
-			// FlushingStdoutHandler{},
-		))
-	uLog.SetHandler(
-		log15.LvlFilterHandler(
-			// log15.LvlWarn,
-			log15.LvlDebug,
-			log15.DiscardHandler(),
-			// FlushingStdoutHandler{},
-		))
 }
 
 // sameElements tests if two string slices have the same elements
