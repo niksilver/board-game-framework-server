@@ -24,7 +24,7 @@ var pongTimeout = (pingFreq * 5) / 4
 var writeTimeout = 10 * time.Second
 
 // How long to allow for a reconnection if we lose the client
-var reconnectionTimeout = 3 * time.Second
+var reconnectionTimeout = 5 * time.Second
 
 func init() {
 	// Let's not generate near-identical client IDs on every restart
