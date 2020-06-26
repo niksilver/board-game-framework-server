@@ -61,35 +61,49 @@ func main() {
 func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	// The client will get a response as soon as Upgrade returns, so use
 	// the waitgroup to ensure tests wait for all subsequent goroutines.
+	aLog.Info("Step 1")
 	WG.Add(1)
+	aLog.Info("Step 2")
 	defer WG.Done()
+	aLog.Info("Step 3")
 
 	// Create a websocket connection
-	clientID := ClientIDOrNew(r.Cookies())
+	aLog.Info("Step 4")
+	clientID := ClientIDOrNew(r.URL.RawQuery)
+	aLog.Info("Step 5")
 	ws, err := Upgrade(w, r, clientID)
+	aLog.Info("Step 6")
 	if err != nil {
 		aLog.Warn("Upgrade", "error", err)
 		return
 	}
+	aLog.Info("Step 7")
 
 	// Make sure we can get a hub
 	hub, err := Shub.Hub(r.URL.Path)
+	aLog.Info("Step 8")
 	if err != nil {
+		aLog.Info("Step 9")
 		msg := websocket.FormatCloseMessage(
 			websocket.CloseNormalClosure, err.Error())
 		// The following calls may error, but we're exiting, so will ignore
+		aLog.Info("Step 10")
 		ws.WriteMessage(websocket.CloseMessage, msg)
+		aLog.Info("Step 11")
 		ws.Close()
 		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err)
 		return
 	}
+	aLog.Info("Step 12")
 
 	// Start the client handler running
 	lastNum := lastNum(r.URL.RawQuery)
 	num := lastNum
 	if lastNum >= 0 {
+		aLog.Info("Step 13")
 		num = lastNum + 1
 	}
+	aLog.Info("Step 14")
 	c := &Client{
 		ID:           clientID,
 		Num:          num,
@@ -98,8 +112,11 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		InitialQueue: make(chan *Queue),
 		Pending:      make(chan *Envelope),
 	}
+	aLog.Info("Step 15")
 	c.Ref = fmt.Sprintf("%p", c)
+	aLog.Info("Step 16")
 	c.Start()
+	aLog.Info("Step 17")
 	aLog.Info("Connected client", "id", clientID, "num", num, "ref", c.Ref)
 }
 

@@ -6,6 +6,7 @@ package main
 
 import (
 	"github.com/gorilla/websocket"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -23,52 +24,25 @@ func TestClient_CreatesNewID(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	ws, resp, err := dial(serv, "/cl.creates.new.id", "", -1)
-	defer ws.Close()
+	ws, _, err := dial(serv, "/cl.creates.new.id", "", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws := newTConn(ws, "ws")
+	defer tws.close()
+
+	env, err := tws.readEnvelope(500, "Expecting Welcome")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cookies := resp.Cookies()
-	clientID := ClientID(cookies)
+	clientID := env.To[0]
 	if clientID == "" {
 		t.Errorf("clientID cookie is empty or not defined")
 	}
 
 	// Tidy up, and check everything in the main app finishes
-	ws.Close()
-	WG.Wait()
-}
-
-func TestClient_ClientIDCookieIsPersistent(t *testing.T) {
-	// Just for this test, lower the reconnectionTimeout so that a
-	// Leaver message is triggered reasonably quickly.
-	oldReconnectionTimeout := reconnectionTimeout
-	reconnectionTimeout = 250 * time.Millisecond
-	defer func() {
-		reconnectionTimeout = oldReconnectionTimeout
-	}()
-
-	serv := newTestServer(bounceHandler)
-	defer serv.Close()
-
-	ws, resp, err := dial(serv, "/cl.client.id.cookie.persistent", "", -1)
-	defer ws.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cookies := resp.Cookies()
-	maxAge := ClientIDMaxAge(cookies)
-	if maxAge < 100_000 {
-		t.Errorf(
-			"clientID cookie has max age %d, but expected 100,000 or more",
-			maxAge,
-		)
-	}
-
-	// Tidy up, and check everything in the main app finishes
-	ws.Close()
+	tws.close()
 	WG.Wait()
 }
 
@@ -88,14 +62,18 @@ func TestClient_ReusesOldId(t *testing.T) {
 
 	initialClientID := "existing_value"
 
-	ws, resp, err := dial(serv, "/cl.reuses.old.id", initialClientID, -1)
-	defer ws.Close()
+	ws, _, err := dial(serv, "/cl.reuses.old.id", initialClientID, -1)
 	if err != nil {
 		t.Fatal(err)
 	}
+	tws := newTConn(ws, initialClientID)
+	defer tws.close()
 
-	cookies := resp.Cookies()
-	clientID := ClientID(cookies)
+	env, err := tws.readEnvelope(500, "Expecting welcome")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID := env.To[0]
 	if clientID != initialClientID {
 		t.Errorf("clientID cookie: expected '%s', got '%s'",
 			clientID,
@@ -103,14 +81,14 @@ func TestClient_ReusesOldId(t *testing.T) {
 	}
 
 	// Tidy up, and check everything in the main app finishes
-	ws.Close()
+	tws.close()
 	WG.Wait()
 }
 
 func TestClient_NewIDsAreDifferent(t *testing.T) {
 	usedIDs := make(map[string]bool)
-	cIDs := make([]string, 100)
-	wss := make([]*websocket.Conn, 100)
+	cIDs := make([]string, 40)
+	twss := make([]*tConn, 40)
 
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
@@ -125,17 +103,22 @@ func TestClient_NewIDsAreDifferent(t *testing.T) {
 	serv := newTestServer(bounceHandler)
 	defer serv.Close()
 
-	for i := 0; i < len(wss); i++ {
+	for i := 0; i < len(twss); i++ {
 		// Get a new client connection
-		ws, resp, err := dial(serv, "/cl.new.ids.different", "", -1)
-		wss[i] = ws
-		defer wss[i].Close()
+		ws, _, err := dial(serv, "/cl.new.ids.different", "", -1)
 		if err != nil {
 			t.Fatal(err)
 		}
+		tws := newTConn(ws, "connection"+strconv.Itoa(i))
+		twss[i] = tws
+		defer twss[i].close()
 
-		cookies := resp.Cookies()
-		clientID := ClientID(cookies)
+		// Get the ID in the welcome envelope
+		env, err := tws.readEnvelope(500, "Expecting welcome, i=%d", i)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clientID := env.To[0]
 		cIDs[i] = clientID
 
 		if usedIDs[clientID] {
@@ -153,8 +136,8 @@ func TestClient_NewIDsAreDifferent(t *testing.T) {
 	}
 
 	// Tidy up, and check everything in the main app finishes
-	for _, ws := range wss {
-		ws.Close()
+	for _, tws := range twss {
+		tws.close()
 	}
 	WG.Wait()
 }

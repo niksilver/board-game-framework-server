@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -94,38 +95,19 @@ func NewClientID() string {
 	)
 }
 
-// clientID returns the value of the clientID cookie, or empty string
-// if there's none there.
-func ClientID(cookies []*http.Cookie) string {
-	for _, cookie := range cookies {
-		if cookie.Name == "clientID" {
-			return cookie.Value
-		}
-	}
-
-	return ""
-}
-
-// ClientIDOrNew returns the value of the clientID cookie, or a new ID
-// if there's none there.
-func ClientIDOrNew(cookies []*http.Cookie) string {
-	clientID := ClientID(cookies)
-	if clientID == "" {
+// ClientIDOrNew returns the value of the client ID from the URL query,
+// or a new ID if there's none there.
+func ClientIDOrNew(query string) string {
+	v, err := url.ParseQuery(query)
+	if err != nil {
+		aLog.Warn("Couldn't parse query string", "query", query)
 		return NewClientID()
 	}
-	return clientID
-}
-
-// clientID returns the Max-Age value of the clientID cookie,
-// or 0 if there's none there
-func ClientIDMaxAge(cookies []*http.Cookie) int {
-	for _, cookie := range cookies {
-		if cookie.Name == "clientID" {
-			return cookie.MaxAge
-		}
+	gotID := v.Get("id")
+	if gotID == "" {
+		return NewClientID()
 	}
-
-	return 0
+	return gotID
 }
 
 // Start attaches the client to its hub and starts its goroutines.

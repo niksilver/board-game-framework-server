@@ -69,34 +69,24 @@ func dial(serv *httptest.Server, path string, clientID string, num int) (
 	// and add the given path
 	url := "ws" + strings.TrimPrefix(serv.URL, "http") + path
 
-	// Add a last num received, if we've got one
-	if num >= 0 {
-		url = url + "?lastnum=" + strconv.Itoa(num)
+	// Add client ID and lastnum received, if we've got either
+	var qry, idStr, amp, lastnumStr string
+	if clientID != "" || num >= 0 {
+		qry = "?"
 	}
-
-	// If necessary, creater a header with the given cookie
-	var header http.Header
 	if clientID != "" {
-		header = cookieRequestHeader("clientID", clientID)
+		idStr = "id=" + clientID
 	}
+	if clientID != "" && num >= 0 {
+		amp = "&"
+	}
+	if num >= 0 {
+		lastnumStr = "lastnum=" + strconv.Itoa(num)
+	}
+	url = url + qry + idStr + amp + lastnumStr
 
 	// Connect to the server
-
-	return websocket.DefaultDialer.Dial(url, header)
-}
-
-// cookieRequestHeader returns a new http.Header for a client request,
-// in which only a single cookie is sent, with some value.
-func cookieRequestHeader(name string, value string) http.Header {
-	cookie := &http.Cookie{
-		Name:  name,
-		Value: value,
-	}
-	cookieStr := cookie.String()
-	header := http.Header(make(map[string][]string))
-	header.Add("Cookie", cookieStr)
-
-	return header
+	return websocket.DefaultDialer.Dial(url, make(http.Header))
 }
 
 // newTConn creates a new timeoutable connection from the given one.
