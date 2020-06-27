@@ -714,7 +714,6 @@ func TestHubSeq_ConnectionWithBadLastnumShouldNotBeALeaver(t *testing.T) {
 	}
 	tws2 := newTConn(ws2, "FOL2")
 	defer tws2.close()
-	rr, timedOut = tws2.readMessage(500)
 
 	// Second client expects a welcome
 	env, err := tws2.readEnvelope(500, "ws2 expecting welcome")
@@ -723,6 +722,9 @@ func TestHubSeq_ConnectionWithBadLastnumShouldNotBeALeaver(t *testing.T) {
 	}
 	if env.Intent != "Welcome" {
 		t.Errorf("ws2 intent was %s but exepcted Welcome", env.Intent)
+	}
+	if len(env.From) != 0 {
+		t.Errorf("ws2 From was %v but exepcted empty list", env.From)
 	}
 
 	// Second client expects nothing after that, even when the first

@@ -5,20 +5,15 @@
 package main
 
 import (
+	"fmt"
 	"time"
 )
 
 // Hub collects all related clients
 type Hub struct {
 	name string
-	// All clients known and their connection status.
-	// True: Client is connected, and we will pass envelopes into it.
-	// False: Client is disconnected, no running goroutines, but it's
-	//     present as far as other clients are concerned because we might
-	//     get a reconnection (before that times out). We will buffer
-	//     envelopes for this client, even though we can't send them.
-	// Only one client per ID should be known at any time.
-	clients map[*Client]bool
+	// All clients that have been seen, and the superhub is tracking
+	clients map[*Client]status
 	// Num for the next envelope num
 	num int
 	// Messages from clients that need to be bounced out.
@@ -29,6 +24,19 @@ type Hub struct {
 	// Buffer of recent envelopes, in case they need to be resent
 	buffer *Buffer
 }
+
+// The status of any client seen, and that the superhub is tracking
+type status int
+
+// Various client statuses
+const (
+	// Client is connected
+	CONNECTED status = 1
+	// Client may reconnect, but is currently disconnected
+	MAYRECONNECT status = 2
+	// Client is being tracked, but is not known to other clients
+	TRACKEDONLY status = 3
+)
 
 // Message is what is received from a Client.
 type Message struct {
@@ -54,7 +62,7 @@ type Envelope struct {
 func NewHub(name string) *Hub {
 	return &Hub{
 		name:    name,
-		clients: make(map[*Client]bool),
+		clients: make(map[*Client]status),
 		num:     0,
 		Pending: make(chan *Message),
 		Timeout: make(chan *Client),
@@ -87,12 +95,10 @@ readingLoop:
 			// The superhub's client reconnection timer has fired
 			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 			caseLog.Debug("Reconnection timed out")
-			if h.known(c) {
-				// We have a leaver
-				caseLog.Debug("Timed-out client is known; removing")
-				h.remove(c)
+			h.remove(c)
 
-				// Send a leaver message to remaining clients
+			if h.stillJoined(c) {
+				// We have a leaver
 				h.leaver(c)
 				h.num++
 				caseLog.Debug("Sent leaver messages")
@@ -109,43 +115,43 @@ readingLoop:
 			switch {
 			case msg.Intent == "Joiner" &&
 				!h.canFulfill(msg.From.ID, msg.From.Num):
-				// New client but bad lastnum; eject client
+				// New client but bad lastnum; just track it quietly
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("New client but bad num", "num", msg.From.Num)
 
 				// Start the client sending messages, but shut it down
 				// immediately
-				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
+				h.connect(c, h.buffer.Queue(c.ID, c.Num))
 				c.Pending <- &Envelope{Intent: "BadLastnum"}
-				h.disconnectDirectly(c)
+				h.justTrack(c)
 
 			case msg.Intent == "Joiner" &&
-				h.other(msg.From) != nil &&
+				h.otherJoined(msg.From) != nil &&
 				msg.From.Num >= 0 &&
 				h.canFulfill(msg.From.ID, msg.From.Num):
 				// New client taking over from old client
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
-				cOld := h.other(msg.From)
+				cOld := h.otherJoined(msg.From)
 				caseLog.Debug("New client taking over", "oldcref", cOld.Ref)
 
 				// Let the new client replace the old client and start it off
 				h.replace(c, h.buffer.Queue(c.ID, c.Num), cOld)
 
 			case msg.Intent == "Joiner" &&
-				h.other(msg.From) != nil &&
+				h.otherJoined(msg.From) != nil &&
 				msg.From.Num < 0:
 				// New client for old ID, but didn't ask to take over
 				c := msg.From
-				cOld := h.other(msg.From)
+				cOld := h.otherJoined(msg.From)
 				caseLog := fLog.New("newcid", c.ID, "newcref", c.Ref,
 					"oldcref", cOld.Ref)
 				caseLog.Debug("New client while old present, but no takeover")
 
-				// First disconnect and remove the old client
+				// First disconnect the old client and just track it
 				h.disconnect(cOld)
-				h.remove(cOld)
+				h.justTrack(cOld)
 
 				// Next, send leaver messages to all the clients
 				h.leaver(cOld)
@@ -160,7 +166,7 @@ readingLoop:
 				h.welcome(c)
 				h.num++
 
-			case msg.Intent == "Joiner" && h.other(msg.From) == nil:
+			case msg.Intent == "Joiner" && h.otherJoined(msg.From) == nil:
 				// New joiner
 				c := msg.From
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
@@ -186,7 +192,7 @@ readingLoop:
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("Got peer msg", "content", string(msg.Body))
 
-				toCls := h.exclude(c)
+				toCls := h.joinedExcluding(c)
 				envP := &Envelope{
 					From:   []string{c.ID},
 					To:     ids(toCls),
@@ -238,22 +244,25 @@ func (h *Hub) canFulfill(id string, num int) bool {
 
 // Is a client known and connected?
 func (h *Hub) connected(c *Client) bool {
-	return h.clients[c]
+	return h.clients[c] == CONNECTED
 }
 
-// Is a client known and disconnected?
-func (h *Hub) disconnected(c *Client) bool {
-	conn, ok := h.clients[c]
-	return ok && !conn
+// Is a client known and disconnected, but may reconnect?
+func (h *Hub) mayReconnect(c *Client) bool {
+	return h.clients[c] == MAYRECONNECT
 }
 
-// Is a client known?
-func (h *Hub) known(c *Client) bool {
-	_, ok := h.clients[c]
-	return ok
+// Is a client still joined, as far as the other clients are concerned?
+func (h *Hub) stillJoined(c *Client) bool {
+	return h.clients[c] == CONNECTED || h.clients[c] == MAYRECONNECT
 }
 
-// remove a client from the list of known clients. This like replace,
+// Is a client being tracked?
+func (h *Hub) tracked(c *Client) bool {
+	return h.clients[c] > 0
+}
+
+// remove a client from the list of tracked clients. This like replace,
 // but there's no new client, so the buffer is lost.
 func (h *Hub) remove(c *Client) {
 	aLog.Debug("Removing client", "fn", "hub.remove",
@@ -262,51 +271,56 @@ func (h *Hub) remove(c *Client) {
 	h.buffer.Remove(c.ID)
 }
 
-// connect a client and start it going with a given queue
+// connect a client and start it going with a given queue.
 func (h *Hub) connect(c *Client, q *Queue) {
 	aLog.Debug("Connecting client", "fn", "hub.connect",
 		"cid", c.ID, "cref", c.Ref)
-	h.clients[c] = true
+	h.clients[c] = CONNECTED
 	c.InitialQueue <- q
 }
 
-// disconnect a given client
+// disconnect a given client, although it (or, more correctly, another
+// with the same ID) may reconnect.
 func (h *Hub) disconnect(c *Client) {
 	aLog.Debug("Disconnecting client", "fn", "hub.disconnect",
+		"cid", c.ID, "cref", c.Ref)
+	// Only do this if the client is connected, otherwise we may
+	// close a channel a second time, or revive a just-tracking client.
+	if h.connected(c) {
+		close(c.Pending)
+		h.clients[c] = MAYRECONNECT
+	}
+}
+
+// justTrack a client, ready for when the superhub times it out;
+// other clients now won't know about it.
+func (h *Hub) justTrack(c *Client) {
+	aLog.Debug("Just tracking client", "fn", "hub.justTrack",
 		"cid", c.ID, "cref", c.Ref)
 	if h.connected(c) {
 		close(c.Pending)
 	}
-	if h.known(c) {
-		h.clients[c] = false
-	}
+	h.clients[c] = TRACKEDONLY
+	aLog.Debug("Clients update", "fn", "hub.justTrack", "clients", h.clientsString())
 }
 
-// disconnect a given client, even though it hasn't been connected
-func (h *Hub) disconnectDirectly(c *Client) {
-	aLog.Debug("Disconnecting client", "fn", "hub.disconnectDirectly",
-		"cid", c.ID, "cref", c.Ref)
-	close(c.Pending)
-	h.clients[c] = false
-}
-
-// Replace has a new (connected) client replacing an old one.
-// The old one is shut down if it's still connected and forgotten about.
+// replace has a new (connected) client replacing an old joined one.
+// The old one is shut down if it's still connected and we just track it.
 // The new client is started off with the given queue.
 func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 	fLog := aLog.New("fn", "hub.replace", "cnewref", cNew.Ref,
 		"coldref", cOld.Ref)
 	fLog.Debug("Replacing client")
-	if !h.known(cOld) {
-		fLog.Warn("Old client not known")
+	if !h.tracked(cOld) {
+		panic("Old client not known")
 		return
 	}
 	if h.connected(cOld) {
 		fLog.Debug("Closing old channel")
 		close(cOld.Pending)
 	}
-	delete(h.clients, cOld)
-	h.clients[cNew] = true
+	h.clients[cOld] = TRACKEDONLY
+	h.clients[cNew] = CONNECTED
 	cNew.InitialQueue <- qNew
 }
 
@@ -316,7 +330,7 @@ func (h *Hub) welcome(c *Client) {
 		"cid", c.ID, "cref", c.Ref)
 	env := &Envelope{
 		To:     []string{c.ID},
-		From:   h.excludeID(c),
+		From:   h.joinedIDsExcluding(c),
 		Num:    h.num,
 		Time:   nowMs(),
 		Intent: "Welcome",
@@ -331,7 +345,7 @@ func (h *Hub) joiner(c *Client) {
 		"cid", c.ID, "cref", c.Ref)
 	env := &Envelope{
 		From:   []string{c.ID},
-		To:     h.excludeID(c),
+		To:     h.joinedIDsExcluding(c),
 		Num:    h.num,
 		Time:   nowMs(),
 		Intent: "Joiner",
@@ -344,13 +358,13 @@ func (h *Hub) joiner(c *Client) {
 	}
 }
 
-// leaver message sent to all clients about leaver c.
+// leaver message sent to all joined clients about leaver c.
 func (h *Hub) leaver(c *Client) {
 	aLog.Debug("Sending leaver messages", "fn", "hub.leaver",
 		"cid", c.ID, "cref", c.Ref)
 	env := &Envelope{
 		From:   []string{c.ID},
-		To:     h.allIDs(),
+		To:     h.allJoinedIDs(),
 		Num:    h.num,
 		Time:   nowMs(),
 		Intent: "Leaver",
@@ -368,39 +382,44 @@ func (h *Hub) send(c *Client, env *Envelope) {
 	}
 }
 
-// exclude finds all clients which aren't the given one.
+// joinedExcluding finds all joined clients which aren't the given one.
 // Matching is done on pointers.
-func (h *Hub) exclude(cx *Client) []*Client {
+func (h *Hub) joinedExcluding(cx *Client) []*Client {
 	cOut := make([]*Client, 0)
 	for c, _ := range h.clients {
-		if c != cx {
+		if c != cx && h.stillJoined(c) {
 			cOut = append(cOut, c)
 		}
 	}
 	return cOut
 }
 
-// excludeID finds the IDs of all clients which aren't the given client.
-func (h *Hub) excludeID(cx *Client) []string {
+// joinedIDsExcluding finds the IDs of all joined clients which aren't
+// the given client.
+func (h *Hub) joinedIDsExcluding(cx *Client) []string {
 	cOut := make([]string, 0)
 	for c, _ := range h.clients {
-		if c != cx {
+		aLog.Debug("Comparing", "cx.id", cx.ID, "cx.ref", cx.Ref, "c.id", c.ID, "c.ref", c.Ref)
+		if c != cx && h.stillJoined(c) {
+			aLog.Debug("Appending c", "c.status", h.clients[c])
 			cOut = append(cOut, c.ID)
 		}
 	}
 	return cOut
 }
 
-// allIDs returns all the IDs known to the hub
-func (h *Hub) allIDs() []string {
+// allJoinedIDs returns all the IDs known to the hub
+func (h *Hub) allJoinedIDs() []string {
 	out := make([]string, 0)
 	for c, _ := range h.clients {
-		out = append(out, c.ID)
+		if h.stillJoined(c) {
+			out = append(out, c.ID)
+		}
 	}
 	return out
 }
 
-// ids returns just the IDs of the clients
+// ids returns just the IDs of the given clients
 func ids(cs []*Client) []string {
 	out := make([]string, len(cs))
 	for i, c := range cs {
@@ -409,11 +428,11 @@ func ids(cs []*Client) []string {
 	return out
 }
 
-// otherIDs returns the other client with the same ID, or nil
-func (h *Hub) other(c *Client) *Client {
+// otherJoined returns the other joined client with the same ID, or nil
+func (h *Hub) otherJoined(c *Client) *Client {
 	var cOther *Client
-	for k := range h.clients {
-		if k.ID != c.ID {
+	for c2 := range h.clients {
+		if c2.ID != c.ID || !h.stillJoined(c2) {
 			continue
 		}
 		if cOther != nil {
@@ -421,7 +440,15 @@ func (h *Hub) other(c *Client) *Client {
 				"fn", "hub.other", "cid", c.ID, "cref", c.Ref,
 				"cotherref", cOther.Ref)
 		}
-		cOther = k
+		cOther = c2
 	}
 	return cOther
+}
+
+func (h *Hub) clientsString() string {
+	out := "{"
+	for c, st := range h.clients {
+		out += fmt.Sprintf("%s-%s:%d,", c.ID, c.Ref, st)
+	}
+	return out[:len(out)-1] + "}"
 }
