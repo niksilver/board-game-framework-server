@@ -676,6 +676,75 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	WG.Wait()
 }
 
+// A timeout from a connection with a bad lastnum should not send a leaver
+// message to clients.
+func TestHubSeq_ConnectionWithBadLastnumShouldNotBeALeaver(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect the first client with a bad lastnum
+	game := "/hub.good.follows"
+	ws1, _, err := dial(serv, game, "FOL1", 3056)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1 := newTConn(ws1, "FOL1")
+	defer tws1.close()
+	rr, timedOut := tws1.readMessage(500)
+	if timedOut {
+		t.Fatalf("ws1 timed out but expected closed connection")
+	}
+	if rr.err == nil {
+		t.Fatalf("ws1 read okay but expected closed connection")
+	}
+
+	// Connect the second client with a good lastnum
+	ws2, _, err := dial(serv, game, "FOL2", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws2 := newTConn(ws2, "FOL2")
+	defer tws2.close()
+	rr, timedOut = tws2.readMessage(500)
+
+	// Second client expects a welcome
+	env, err := tws2.readEnvelope(500, "ws2 expecting welcome")
+	if err != nil {
+		t.Fatalf("ws2 got error but expected welcome: %s", err.Error())
+	}
+	if env.Intent != "Welcome" {
+		t.Errorf("ws2 intent was %s but exepcted Welcome", env.Intent)
+	}
+
+	// Second client expects nothing after that, even when the first
+	// client's reconnection timeout expires.
+	rr, timedOut = tws2.readMessage(500)
+	if !timedOut {
+		if rr.err != nil {
+			t.Fatalf("ws2 expected timeout, but got errer %s", rr.err.Error())
+		} else {
+			t.Fatalf("ws2 expected timeout, but got message %s",
+				string(rr.msg))
+		}
+	}
+
+	// Close the connections
+	tws1.close()
+	tws2.close()
+
+	// Wait for all processes to finish
+	WG.Wait()
+}
+
 // If a client connects with an existing ID for which there's an old
 // client, and it's expecting a sensible last num but it was too slow,
 // then it should be get a closed connection with a suitable message.
