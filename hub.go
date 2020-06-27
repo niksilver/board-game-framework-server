@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -304,7 +303,6 @@ func (h *Hub) justTrack(c *Client) {
 		close(c.Pending)
 	}
 	h.clients[c] = TRACKEDONLY
-	aLog.Debug("Clients update", "fn", "hub.justTrack", "clients", h.clientsString())
 }
 
 // replace has a new (connected) client replacing an old joined one.
@@ -315,7 +313,7 @@ func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 		"coldref", cOld.Ref)
 	fLog.Debug("Replacing client")
 	if !h.tracked(cOld) {
-		panic("Old client not known")
+		fLog.Error("Old client not known")
 		return
 	}
 	if h.connected(cOld) {
@@ -455,12 +453,4 @@ func (h *Hub) otherJoined(c *Client) *Client {
 		cOther = c2
 	}
 	return cOther
-}
-
-func (h *Hub) clientsString() string {
-	out := "{"
-	for c, st := range h.clients {
-		out += fmt.Sprintf("%s-%s:%d,", c.ID, c.Ref, st)
-	}
-	return out[:len(out)-1] + "}"
 }
