@@ -95,13 +95,16 @@ readingLoop:
 			// The superhub's client reconnection timer has fired
 			caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 			caseLog.Debug("Reconnection timed out")
-			h.remove(c)
 
 			if h.stillJoined(c) {
 				// We have a leaver
+				h.remove(c)
 				h.leaver(c)
 				h.num++
 				caseLog.Debug("Sent leaver messages")
+			} else {
+				caseLog.Debug("No messages to send")
+				h.remove(c)
 			}
 
 			if len(h.clients) == 0 {
@@ -351,7 +354,7 @@ func (h *Hub) joiner(c *Client) {
 		Intent: "Joiner",
 	}
 
-	for cl, _ := range h.clients {
+	for _, cl := range h.allJoined() {
 		if cl != c {
 			h.send(cl, env)
 		}
@@ -369,7 +372,7 @@ func (h *Hub) leaver(c *Client) {
 		Time:   nowMs(),
 		Intent: "Leaver",
 	}
-	for cl, _ := range h.clients {
+	for _, cl := range h.allJoined() {
 		h.send(cl, env)
 	}
 }
@@ -380,6 +383,17 @@ func (h *Hub) send(c *Client, env *Envelope) {
 	if h.connected(c) {
 		c.Pending <- env
 	}
+}
+
+// allJoined finds all joined clients.
+func (h *Hub) allJoined() []*Client {
+	cOut := make([]*Client, 0)
+	for c, _ := range h.clients {
+		if h.stillJoined(c) {
+			cOut = append(cOut, c)
+		}
+	}
+	return cOut
 }
 
 // joinedExcluding finds all joined clients which aren't the given one.
@@ -399,9 +413,7 @@ func (h *Hub) joinedExcluding(cx *Client) []*Client {
 func (h *Hub) joinedIDsExcluding(cx *Client) []string {
 	cOut := make([]string, 0)
 	for c, _ := range h.clients {
-		aLog.Debug("Comparing", "cx.id", cx.ID, "cx.ref", cx.Ref, "c.id", c.ID, "c.ref", c.Ref)
 		if c != cx && h.stillJoined(c) {
-			aLog.Debug("Appending c", "c.status", h.clients[c])
 			cOut = append(cOut, c.ID)
 		}
 	}
