@@ -119,10 +119,10 @@ readingLoop:
 				caseLog.Debug("New client but bad num", "num", msg.From.Num)
 
 				// Start the client sending messages, but shut it down
-				// immediately, without it ever joining our known client list
+				// immediately
 				c.InitialQueue <- h.buffer.Queue(c.ID, c.Num)
 				c.Pending <- &Envelope{Intent: "BadLastnum"}
-				close(c.Pending)
+				h.disconnectDirectly(c)
 
 			case msg.Intent == "Joiner" &&
 				h.other(msg.From) != nil &&
@@ -276,7 +276,7 @@ func (h *Hub) connect(c *Client, q *Queue) {
 
 // disconnect a given client
 func (h *Hub) disconnect(c *Client) {
-	aLog.Debug("Disconnecting client", "fn", "hub.connect",
+	aLog.Debug("Disconnecting client", "fn", "hub.disconnect",
 		"cid", c.ID, "cref", c.Ref)
 	if h.connected(c) {
 		close(c.Pending)
@@ -284,6 +284,14 @@ func (h *Hub) disconnect(c *Client) {
 	if h.known(c) {
 		h.clients[c] = false
 	}
+}
+
+// disconnect a given client, even though it hasn't been connected
+func (h *Hub) disconnectDirectly(c *Client) {
+	aLog.Debug("Disconnecting client", "fn", "hub.disconnectDirectly",
+		"cid", c.ID, "cref", c.Ref)
+	close(c.Pending)
+	h.clients[c] = false
 }
 
 // Replace has a new (connected) client replacing an old one.
