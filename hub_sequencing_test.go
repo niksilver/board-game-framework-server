@@ -593,6 +593,89 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	WG.Wait()
 }
 
+// A timeout from a connection with a bad lastnum should allow later
+// connections. This was once a problem:
+// First client connects with bad lastnum;
+// second client connects with bad lastnum;
+// first client times out;
+// second client times out;
+// third client tries to connect.
+func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
+	// Just for this test, lower the reconnectionTimeout so that a
+	// Leaver message is triggered reasonably quickly.
+	oldReconnectionTimeout := reconnectionTimeout
+	reconnectionTimeout = 250 * time.Millisecond
+	defer func() {
+		reconnectionTimeout = oldReconnectionTimeout
+	}()
+
+	// Start a server
+	serv := newTestServer(bounceHandler)
+	defer serv.Close()
+
+	// Connect the first client with a bad lastnum
+	game := "/hub.bad.then.good"
+	ws1, _, err := dial(serv, game, "BADGOOD", 3056)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws1 := newTConn(ws1, "BADGOOD")
+	defer tws1.close()
+	rr, timedOut := tws1.readMessage(500)
+	if timedOut {
+		t.Fatalf("ws1 timed out but expected closed connection")
+	}
+	if rr.err == nil {
+		t.Fatalf("ws1 read okay but expected closed connection")
+	}
+
+	// Sleep for a short time to allow the first client to time out
+	// before the second
+	time.Sleep(reconnectionTimeout / 2)
+
+	// Connect the second client with a bad lastnum
+	ws2, _, err := dial(serv, game, "BADGOOD", 3056)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws2 := newTConn(ws2, "BADGOOD")
+	defer tws2.close()
+	rr, timedOut = tws2.readMessage(500)
+	if timedOut {
+		t.Fatalf("ws2 timed out but expected closed connection")
+	}
+	if rr.err == nil {
+		t.Fatalf("ws2 read okay but expected closed connection")
+	}
+
+	// Sleep for a short time to allow the second client to time out
+	// before continuing
+	time.Sleep(reconnectionTimeout * 3 / 2)
+
+	// Connect the third client
+	ws3, _, err := dial(serv, game, "BADGOOD", -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tws3 := newTConn(ws3, "BADGOOD")
+	defer tws3.close()
+	env, err := tws3.readEnvelope(500, "ws3 expecting welcome")
+	if err != nil {
+		t.Fatalf("ws3 got error but expected welcome: %s", err.Error())
+	}
+	if env.Intent != "Welcome" {
+		t.Errorf("ws3 intent was %s but exepcted Welcome", env.Intent)
+	}
+
+	// Close the connections
+	tws1.close()
+	tws2.close()
+	tws3.close()
+
+	// Wait for all processes to finish
+	WG.Wait()
+}
+
 // If a client connects with an existing ID for which there's an old
 // client, and it's expecting a sensible last num but it was too slow,
 // then it should be get a closed connection with a suitable message.

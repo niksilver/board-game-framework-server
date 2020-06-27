@@ -5,12 +5,14 @@
 package main
 
 import (
+	"fmt"
 	"time"
 )
 
 // Hub collects all related clients
 type Hub struct {
 	name string
+	ref  string
 	// All clients known and their connection status.
 	// True: Client is connected, and we will pass envelopes into it.
 	// False: Client is disconnected, no running goroutines, but it's
@@ -52,7 +54,7 @@ type Envelope struct {
 
 // NewHub creates a new, empty Hub with a given name.
 func NewHub(name string) *Hub {
-	return &Hub{
+	h := &Hub{
 		name:    name,
 		clients: make(map[*Client]bool),
 		num:     0,
@@ -60,6 +62,8 @@ func NewHub(name string) *Hub {
 		Timeout: make(chan *Client),
 		buffer:  NewBuffer(),
 	}
+	h.ref = fmt.Sprintf("%p", h)
+	return h
 }
 
 // Start starts goroutines running that process the messages.
@@ -76,7 +80,7 @@ func (h *Hub) receiveInt() {
 
 	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
-	fLog.Debug("Entering")
+	fLog.Debug("Entering", "hubref", h.ref)
 
 readingLoop:
 	for {
