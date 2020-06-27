@@ -84,17 +84,12 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 			defer sh.mux.Unlock()
 
 			fLog := aLog.New("fn", "superhub.Release.AfterFunc",
-				"hubname", sh.names[h], "hubref", h.ref, "cid", c.ID, "cref", c.Ref)
+				"hubname", sh.names[h], "cid", c.ID, "cref", c.Ref)
 			fLog.Debug("Entering")
 			// Delete the client from the list
 			sh.tOut[h] = remove(sh.tOut[h], c)
 			sh.decrement(h)
 			// Send a timeout message to the hub
-			hc := make(map[string]int)
-			for h, c := range sh.counts {
-				hc[sh.names[h]] = c
-			}
-			fLog.Debug("Hubs and counts", "map", hc)
 			h.Timeout <- c
 			// For testing only...
 			fLog.Debug("Sent timeout for client")
