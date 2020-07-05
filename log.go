@@ -20,12 +20,13 @@ var tLog = log15.New("side", "test")
 var uLog = log15.New("side", "utils")
 
 func init() {
+	// These settings are overridden in main()
 	// Application-side logging
 	aLog.SetHandler(
 		log15.LvlFilterHandler(
 			// log15.LvlError,
-			// log15.LvlInfo,
-			log15.LvlDebug,
+			log15.LvlInfo,
+			// log15.LvlDebug,
 			// log15.DiscardHandler(),
 			log15.StdoutHandler,
 			// FlushingStdoutHandler{},
