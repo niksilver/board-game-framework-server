@@ -566,23 +566,17 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	num := env.Num
 
 	// We'll connect a replacement for ws1a with a lastnum of something that
-	// doesn't exist. When we try to read it should get a closed connection
-	// with a suitable error message.
-	ws1b, _, err := dial(serv, game, "REC1", num+10)
-	if err != nil {
-		t.Fatalf("Error dialling for ws1b: %s", err)
+	// doesn't exist. We should be unable to connect, and we should get
+	// a relevant message.
+	ws1b, resp, err := dial(serv, game, "REC1", num+10)
+	if err == nil {
+		t.Fatalf("Expected error dialling for ws1b, but got none")
 	}
-	tws1b := newTConn(ws1b, "REC1")
-	defer tws1b.close()
-	rr, timedOut := tws1b.readMessage(250)
-	if timedOut {
-		t.Fatal("ws1b timed out listening for message")
+	if err := responseContains(resp, "num"); err != nil {
+		t.Fatalf("Looking at reponse's error message: %s", err.Error())
 	}
-	if rr.err == nil {
-		t.Fatal("ws1b should have got a closed connection, but didn't")
-	}
-	if !strings.Contains(rr.err.Error(), "lastnum") {
-		t.Errorf("Error message was not suitable: '%s'", rr.err.Error())
+	if ws1b != nil {
+		ws1b.Close()
 	}
 
 	// Close the other connections
