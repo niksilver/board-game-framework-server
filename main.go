@@ -64,7 +64,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	hub, err := Shub.Hub(r.URL.Path)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err)
+		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err.Error())
 		return
 	}
 

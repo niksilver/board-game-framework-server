@@ -7,7 +7,6 @@ package main
 import (
 	"encoding/json"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -613,23 +612,11 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 	// Trying to connect should get a response, but an error response
 	// from the upgraded websocket connection.
 
-	ws, _, err := dial(serv, "/hub.max", "MAXOVER", -1)
-	if err != nil {
-		t.Fatalf("Failed network connection: %s", err)
+	ws, resp, err := dial(serv, "/hub.max", "MAXOVER", -1)
+	if err == nil {
+		t.Fatalf("Expected error for MAXOVER, but didn't get one")
 	}
-	tws := newTConn(ws, "MAXOVER")
-	defer tws.close()
-
-	// Should not be able to read now
-	rr, timedOut := tws.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out reading connection that should have given error")
-	}
-	if rr.err == nil {
-		t.Fatalf("No error reading message, rr.msg=%s", string(rr.msg))
-	}
-	if !strings.Contains(rr.err.Error(), "Maximum number of clients") {
-		t.Errorf("Got error, but the wrong one: %s", rr.err.Error())
+	if err := responseContains(resp, "Maximum number of clients"); err != nil {
 	}
 
 	// Close connections and wait for test goroutines
@@ -638,8 +625,10 @@ func TestHubMsgs_SendsErrorOverMaximumClients(t *testing.T) {
 			tws.close()
 		}
 	}
+	if ws != nil {
+		ws.Close()
+	}
 	w.Wait()
-	tws.close()
 
 	// Check everything in the main app finishes
 	WG.Wait()

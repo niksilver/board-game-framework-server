@@ -71,7 +71,7 @@ func (c *Client) upgrade(
 	w http.ResponseWriter,
 	r *http.Request,
 ) (*websocket.Conn, error) {
-	return upgrader.Upgrade(w, r, http.Header{})
+	return upgrader.Upgrade(w, r, make(http.Header))
 }
 
 // NewClientID generates a random clientID string

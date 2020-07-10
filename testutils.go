@@ -7,6 +7,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -294,6 +295,26 @@ func (ws *tConn) expectNoMessage(timeout int) error {
 		return fmt.Errorf("Got non-timeout error: %s", rr.err.Error())
 	}
 	return fmt.Errorf("Wrongly got message '%s'", string(rr.msg))
+}
+
+// Test if an http.Response contains a string. Nil if it does, error
+// if the response or its body is nil, or if it doesn't contain the string.
+func responseContains(r *http.Response, subs string) error {
+	if r == nil {
+		return fmt.Errorf("Response is nil")
+	}
+	if r.Body == nil {
+		return fmt.Errorf("Response body is nil")
+	}
+	bs, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		return fmt.Errorf("Error reading response body: %s", err.Error())
+	}
+	if !strings.Contains(string(bs), subs) {
+		return fmt.Errorf("Response body does not contain '%s', it was '%s'",
+			subs, string(bs))
+	}
+	return nil
 }
 
 // Compute the max length of two slices
