@@ -610,17 +610,8 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	// Connect the first client with a bad lastnum
 	game := "/hub.bad.then.good"
 	ws1, _, err := dial(serv, game, "BADGOOD", 3056)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws1 := newTConn(ws1, "BADGOOD")
-	defer tws1.close()
-	rr, timedOut := tws1.readMessage(500)
-	if timedOut {
-		t.Fatalf("ws1 timed out but expected closed connection")
-	}
-	if rr.err == nil {
-		t.Fatalf("ws1 read okay but expected closed connection")
+	if err == nil {
+		t.Fatalf("Expected error dialling for ws1, but got none")
 	}
 
 	// Sleep for a short time to allow the first client to time out
@@ -629,17 +620,8 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 
 	// Connect the second client with a bad lastnum
 	ws2, _, err := dial(serv, game, "BADGOOD", 3056)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws2 := newTConn(ws2, "BADGOOD")
-	defer tws2.close()
-	rr, timedOut = tws2.readMessage(500)
-	if timedOut {
-		t.Fatalf("ws2 timed out but expected closed connection")
-	}
-	if rr.err == nil {
-		t.Fatalf("ws2 read okay but expected closed connection")
+	if err == nil {
+		t.Fatalf("Expected error dialling for ws2, but got none")
 	}
 
 	// Sleep for a short time to allow the second client to time out
@@ -662,8 +644,12 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	}
 
 	// Close the connections
-	tws1.close()
-	tws2.close()
+	if ws1 != nil {
+		ws1.Close()
+	}
+	if ws2 != nil {
+		ws2.Close()
+	}
 	tws3.close()
 
 	// Wait for all processes to finish
