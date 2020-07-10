@@ -85,6 +85,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		Pending:      make(chan *Envelope),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
+	aLog.Info("Starting client", "path", r.URL.Path, "id", c.ID, "ref", c.Ref)
 	c.Start(w, r)
 }
 

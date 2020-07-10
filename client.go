@@ -105,7 +105,7 @@ func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
 	// The error can only be a bad lastnum.
 	init := <-c.InitialQueue
 	if init.err != nil {
-		aLog.Debug("Error instead of initial queue", "error", init.err)
+		fLog.Warn("Initialisation error from hub", "error", init.err)
 		http.Error(w, init.err.Error(), http.StatusGone)
 		Shub.Release(c.Hub, c)
 		return
@@ -115,7 +115,7 @@ func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
 	// It's a good request, we can try to upgrade to a websocket
 	ws, err := upgrader.Upgrade(w, r, make(http.Header))
 	if err != nil {
-		aLog.Warn("Upgrade error", "error", err)
+		fLog.Warn("Upgrade error", "error", err)
 		Shub.Release(c.Hub, c)
 		return
 	}
