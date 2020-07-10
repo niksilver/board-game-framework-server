@@ -114,7 +114,7 @@ func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
 	init := <-c.InitialQueue
 	if init.err != nil {
 		aLog.Debug("Error instead of initial queue", "error", init.err)
-		http.Error(w, "Some error here", http.StatusGone)
+		http.Error(w, init.err.Error(), http.StatusGone)
 		Shub.Release(c.Hub, c)
 		return
 	}

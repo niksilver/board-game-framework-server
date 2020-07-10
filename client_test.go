@@ -288,10 +288,13 @@ func TestClient_NewClientWithBadLastnumShouldNotConnect(t *testing.T) {
 	game := "/cl.bad.lastnum"
 
 	// Connect the client with a silly lastnum
-	ws, _, err := dial(serv, game, "BAD", 1029)
+	ws, resp, err := dial(serv, game, "BAD", 1029)
 	if err == nil {
 		t.Fatal("Didn't get error connecting")
 		ws.Close()
+	}
+	if err := responseContains(resp, "num"); err != nil {
+		t.Errorf("Bad response body: %s", err.Error())
 	}
 
 	// Tidy up, and check everything in the main app finishes
