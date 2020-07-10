@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/gorilla/websocket"
 	"github.com/inconshreveable/log15"
 )
 
@@ -40,9 +39,6 @@ func main() {
 	// Handle game requests
 	http.HandleFunc("/g/", bounceHandler)
 
-	// Handle command for cookie annulment
-	http.HandleFunc("/cmd/annul-cookie", annulCookieHandler)
-
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -64,43 +60,32 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 	WG.Add(1)
 	defer WG.Done()
 
-	// Create a websocket connection
-	clientID := ClientIDOrNew(r.URL.RawQuery)
-	ws, err := Upgrade(w, r, clientID)
-	if err != nil {
-		aLog.Warn("Upgrade", "error", err)
-		return
-	}
-
 	// Make sure we can get a hub
 	hub, err := Shub.Hub(r.URL.Path)
 	if err != nil {
-		msg := websocket.FormatCloseMessage(
-			websocket.CloseNormalClosure, err.Error())
-		// The following calls may error, but we're exiting, so will ignore
-		ws.WriteMessage(websocket.CloseMessage, msg)
-		ws.Close()
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		aLog.Warn("Superhub rejected client", "path", r.URL.Path, "err", err)
 		return
 	}
 
-	// Start the client handler running
+	// Start the client handler running.
+	// It will upgrade the request if it's a good request
+	ClientID := ClientIDOrNew(r.URL.RawQuery)
 	lastNum := lastNum(r.URL.RawQuery)
 	num := lastNum
 	if lastNum >= 0 {
 		num = lastNum + 1
 	}
 	c := &Client{
-		ID:           clientID,
+		ID:           ClientID,
 		Num:          num,
-		WS:           ws,
+		WS:           nil,
 		Hub:          hub,
-		InitialQueue: make(chan *Queue),
+		InitialQueue: make(chan *PossibleQueue),
 		Pending:      make(chan *Envelope),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
-	c.Start()
-	aLog.Info("Connected client", "id", clientID, "num", num, "ref", c.Ref)
+	c.Start(w, r)
 }
 
 // lastNum gets the integer given by the lastnum query parameter,
@@ -121,19 +106,6 @@ func lastNum(query string) int {
 		return -1
 	}
 	return num
-}
-
-// annulCookieHandler sets up a websocket, annuls the client ID cookie,
-// and closes.
-func annulCookieHandler(w http.ResponseWriter, r *http.Request) {
-	// Create a websocket connection with an empty cookie
-	ws, err := Upgrade(w, r, "")
-	if err != nil {
-		aLog.Warn("Upgrade", "error", err)
-		return
-	}
-	ws.Close()
-	aLog.Info("Annulled cookie")
 }
 
 // Just say hello

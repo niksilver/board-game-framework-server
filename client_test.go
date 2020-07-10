@@ -267,8 +267,8 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 	WG.Wait()
 }
 
-func TestClient_NewClientWithBadLastnumShouldGetClosedConn(t *testing.T) {
-	fLog := tLog.New("fn", "TestClient_NewClientWithBadLastnumShouldGetClosedConn")
+func TestClient_NewClientWithBadLastnumShouldNotConnect(t *testing.T) {
+	fLog := tLog.New("fn", "TestClient_NewClientWithBadLastnumShouldNotConnect")
 
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
@@ -289,22 +289,13 @@ func TestClient_NewClientWithBadLastnumShouldGetClosedConn(t *testing.T) {
 
 	// Connect the client with a silly lastnum
 	ws, _, err := dial(serv, game, "BAD", 1029)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tws := newTConn(ws, "BAD")
-	defer tws.close()
-	rr, timedOut := tws.readMessage(500)
-	if timedOut {
-		t.Fatal("Timed out, but expected closed connection")
-	}
-	if rr.err == nil {
-		t.Fatal("Read connection okay, but expected closed connection")
+	if err == nil {
+		t.Fatal("Didn't get error connecting")
+		ws.Close()
 	}
 
 	// Tidy up, and check everything in the main app finishes
 	fLog.Debug("Tidying up")
-	ws.Close()
 	WG.Wait()
 }
 

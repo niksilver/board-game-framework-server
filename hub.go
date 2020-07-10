@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 )
 
@@ -122,10 +123,9 @@ readingLoop:
 				caseLog := fLog.New("cid", c.ID, "cref", c.Ref)
 				caseLog.Debug("New client but bad num", "num", msg.From.Num)
 
-				// Start the client sending messages, but shut it down
-				// immediately
-				h.connect(c, h.buffer.Queue(c.ID, c.Num))
-				c.Pending <- &Envelope{Intent: "BadLastnum"}
+				// Tell the client there's an error
+				h.connectWithError(c,
+					fmt.Errorf("Cannot send num %d", msg.From.Num))
 				h.justTrack(c)
 
 			case msg.Intent == "Joiner" &&
@@ -278,7 +278,15 @@ func (h *Hub) connect(c *Client, q *Queue) {
 	aLog.Debug("Connecting client", "fn", "hub.connect",
 		"cid", c.ID, "cref", c.Ref)
 	h.clients[c] = CONNECTED
-	c.InitialQueue <- q
+	c.InitialQueue <- &PossibleQueue{q, nil}
+}
+
+// connect a client but tell it there's a problem
+func (h *Hub) connectWithError(c *Client, err error) {
+	aLog.Debug("Connecting client with error", "fn", "hub.connect",
+		"cid", c.ID, "cref", c.Ref, "error", err)
+	h.clients[c] = CONNECTED
+	c.InitialQueue <- &PossibleQueue{nil, err}
 }
 
 // disconnect a given client, although it (or, more correctly, another
@@ -322,7 +330,7 @@ func (h *Hub) replace(cNew *Client, qNew *Queue, cOld *Client) {
 	}
 	h.clients[cOld] = TRACKEDONLY
 	h.clients[cNew] = CONNECTED
-	cNew.InitialQueue <- qNew
+	cNew.InitialQueue <- &PossibleQueue{qNew, nil}
 }
 
 // welcome sends a Welcome message to just this client.

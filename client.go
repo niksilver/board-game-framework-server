@@ -44,12 +44,17 @@ type Client struct {
 	// Queue of older messages
 	queue *Queue
 	// Channel to receive the initial queue
-	InitialQueue chan *Queue
+	InitialQueue chan *PossibleQueue
 	// To receive a message from the hub. The hub will close the channel
 	// to indicate the client should disconnect and shut down.
 	Pending chan *Envelope
 	// pinger ticks for pinging
 	pinger *time.Ticker
+}
+
+type PossibleQueue struct {
+	queue *Queue
+	err   error
 }
 
 var upgrader = websocket.Upgrader{
@@ -61,29 +66,12 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Upgrade converts an http request to a websocket, ensuring the client ID
-// is sent. The ID should be set properly before entering.
-func Upgrade(
+// Upgrade converts an http request to a websocket.
+func (c *Client) upgrade(
 	w http.ResponseWriter,
 	r *http.Request,
-	clientID string,
 ) (*websocket.Conn, error) {
-	maxAge := 60 * 60 * 24 * 365 * 100 // 100 years, default expiration
-	if clientID == "" {
-		// Annul the cookie
-		maxAge = -1
-	}
-	cookie := &http.Cookie{
-		Name:   "clientID",
-		Value:  clientID,
-		Path:   "/",
-		MaxAge: maxAge,
-	}
-	cookieStr := cookie.String()
-	header := http.Header(make(map[string][]string))
-	header.Add("Set-Cookie", cookieStr)
-
-	return upgrader.Upgrade(w, r, header)
+	return upgrader.Upgrade(w, r, http.Header{})
 }
 
 // NewClientID generates a random clientID string
@@ -110,9 +98,37 @@ func ClientIDOrNew(query string) string {
 	return gotID
 }
 
-// Start attaches the client to its hub and starts its goroutines.
-func (c *Client) Start() {
+// Start attaches the client to its hub, allows the hub to check it has
+// received a good request, and starts its goroutines if so.
+func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
 	fLog := aLog.New("fn", "client.Start", "id", c.ID, "c", c.Ref)
+
+	// First send a joiner message to the hub
+	c.Hub.Pending <- &Message{
+		From:   c,
+		Intent: "Joiner",
+	}
+
+	// Wait for the initial queue, or an error if it's a bad request.
+	// The error can only be a bad lastnum.
+	init := <-c.InitialQueue
+	if init.err != nil {
+		aLog.Debug("Error instead of initial queue", "error", init.err)
+		http.Error(w, "Some error here", http.StatusGone)
+		Shub.Release(c.Hub, c)
+		return
+	}
+	c.queue = init.queue
+
+	// It's a good request, we can try to upgrade to a websocket
+	ws, err := c.upgrade(w, r)
+	if err != nil {
+		aLog.Warn("Upgrade error", "error", err)
+		Shub.Release(c.Hub, c)
+		return
+	}
+	c.WS = ws
+	aLog.Info("Connected client", "id", c.ID, "num", c.Num, "ref", c.Ref)
 
 	// Immediate termination for an excessive message
 	c.WS.SetReadLimit(60 * 1024)
@@ -144,12 +160,6 @@ func (c *Client) receiveExt() {
 
 	defer fLog.Debug("Done")
 	defer WG.Done()
-
-	// First send a joiner message
-	c.Hub.Pending <- &Message{
-		From:   c,
-		Intent: "Joiner",
-	}
 
 	// Read messages until we can no more
 	for {
@@ -189,13 +199,9 @@ func (c *Client) sendExt() {
 	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
 
-	// Keep go through scenarios until we need to shut down this client
+	// Go through scenarios until we need to shut down this client
 	connected := true
-
-	// Wait for the initial queue before choosing the first scenario
-	c.queue = <-c.InitialQueue
-
-	if connected && !c.queue.Empty() {
+	if !c.queue.Empty() {
 		fLog.Debug("Scenario: connected, queued envelopes")
 		connected = c.connectedWithQueued()
 	}
@@ -207,7 +213,7 @@ func (c *Client) sendExt() {
 	// We are here due to either the channel being closed or the
 	// network connection being closed. We need to make sure both are
 	// true before continuing the shut down.
-	fLog.Debug("Closing conn")
+	fLog.Debug("Closing connection")
 	c.WS.Close()
 	aLog.Info("Closed connection", "id", c.ID)
 	c.pinger.Stop()
