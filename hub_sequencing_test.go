@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -757,25 +756,15 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	ws1b, _, err := dial(serv, game, "REC1", lastnum)
-	if err != nil {
-		t.Fatalf("Error dialling for ws1b: %s", err)
-	}
-	tws1b := newTConn(ws1b, "REC1")
-	defer tws1b.close()
-	rr, timedOut := tws1b.readMessage(250)
-	if timedOut {
-		t.Fatal("ws1b timed out listening for expected close")
-	}
-	if rr.err == nil {
-		t.Fatal("ws1b should have got a closed connection, but didn't")
-	}
-	if !strings.Contains(rr.err.Error(), "lastnum") {
-		t.Errorf("Error message was not suitable: '%s'", rr.err.Error())
+	if err == nil {
+		t.Fatalf("Expected error dialling for ws1b, but got none")
 	}
 
 	// Close the other connections
 	tws1a.close()
-	tws1b.close()
+	if ws1b != nil {
+		ws1b.Close()
+	}
 
 	// Wait for all processes to finish
 	WG.Wait()
