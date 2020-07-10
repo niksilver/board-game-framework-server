@@ -66,16 +66,8 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Upgrade converts an http request to a websocket.
-func (c *Client) upgrade(
-	w http.ResponseWriter,
-	r *http.Request,
-) (*websocket.Conn, error) {
-	return upgrader.Upgrade(w, r, make(http.Header))
-}
-
-// NewClientID generates a random clientID string
-func NewClientID() string {
+// newClientID generates a random clientID string
+func newClientID() string {
 	return fmt.Sprintf(
 		"%d.%d",
 		time.Now().Unix(),
@@ -89,11 +81,11 @@ func ClientIDOrNew(query string) string {
 	v, err := url.ParseQuery(query)
 	if err != nil {
 		aLog.Warn("Couldn't parse query string", "query", query)
-		return NewClientID()
+		return newClientID()
 	}
 	gotID := v.Get("id")
 	if gotID == "" {
-		return NewClientID()
+		return newClientID()
 	}
 	return gotID
 }
@@ -121,7 +113,7 @@ func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
 	c.queue = init.queue
 
 	// It's a good request, we can try to upgrade to a websocket
-	ws, err := c.upgrade(w, r)
+	ws, err := upgrader.Upgrade(w, r, make(http.Header))
 	if err != nil {
 		aLog.Warn("Upgrade error", "error", err)
 		Shub.Release(c.Hub, c)
