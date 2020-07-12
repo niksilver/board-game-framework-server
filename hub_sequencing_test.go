@@ -647,12 +647,8 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	}
 
 	// Close the connections
-	if ws1 != nil {
-		ws1.Close()
-	}
-	if ws2 != nil {
-		ws2.Close()
-	}
+	tws1.close()
+	tws2.close()
 	tws3.close()
 
 	// Wait for all processes to finish
@@ -760,15 +756,18 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	ws1b, _, err := dial(serv, game, "REC1", lastnum)
-	if err == nil {
-		t.Fatalf("Expected error dialling for ws1b, but got none")
+	if err != nil {
+		t.Fatalf("wsb1: Got error dialling")
+	}
+	tws1b := newTConn(ws1b, "REC1")
+	defer tws1b.close()
+	if err := tws1b.expectClose(CloseBadLastnum, 500); err != nil {
+		t.Error(err)
 	}
 
-	// Close the other connections
+	// Close the connections
 	tws1a.close()
-	if ws1b != nil {
-		ws1b.Close()
-	}
+	tws1b.close()
 
 	// Wait for all processes to finish
 	WG.Wait()
