@@ -27,6 +27,9 @@ var writeTimeout = 10 * time.Second
 // How long to allow for a reconnection if we lose the client
 var reconnectionTimeout = 5 * time.Second
 
+// Close error code for bad lastnum
+var CloseBadLastnum = 4000
+
 func init() {
 	// Let's not generate near-identical client IDs on every restart
 	rand.Seed(time.Now().UnixNano())
@@ -44,17 +47,12 @@ type Client struct {
 	// Queue of older messages
 	queue *Queue
 	// Channel to receive the initial queue
-	InitialQueue chan *PossibleQueue
+	InitialQueue chan *Queue
 	// To receive a message from the hub. The hub will close the channel
 	// to indicate the client should disconnect and shut down.
 	Pending chan *Envelope
 	// pinger ticks for pinging
 	pinger *time.Ticker
-}
-
-type PossibleQueue struct {
-	queue *Queue
-	err   error
 }
 
 var upgrader = websocket.Upgrader{
@@ -90,37 +88,19 @@ func ClientIDOrNew(query string) string {
 	return gotID
 }
 
-// Start attaches the client to its hub, allows the hub to check it has
-// received a good request, and starts its goroutines if so.
-func (c *Client) Start(w http.ResponseWriter, r *http.Request) {
+// Start announces the client to the hub and
+// kicks off its send and receive goroutines.
+func (c *Client) Start() {
 	fLog := aLog.New("fn", "client.Start", "id", c.ID, "c", c.Ref)
 
-	// First send a joiner message to the hub
+	// Send a joiner message to the hub
 	c.Hub.Pending <- &Message{
 		From:   c,
 		Intent: "Joiner",
 	}
 
-	// Wait for the initial queue, or an error if it's a bad request.
-	// The error can only be a bad lastnum.
-	init := <-c.InitialQueue
-	if init.err != nil {
-		fLog.Warn("Initialisation error from hub", "error", init.err)
-		http.Error(w, init.err.Error(), http.StatusGone)
-		Shub.Release(c.Hub, c)
-		return
-	}
-	c.queue = init.queue
-
-	// It's a good request, we can try to upgrade to a websocket
-	ws, err := upgrader.Upgrade(w, r, make(http.Header))
-	if err != nil {
-		fLog.Warn("Upgrade error", "error", err)
-		Shub.Release(c.Hub, c)
-		return
-	}
-	c.WS = ws
-	aLog.Info("Connected client", "id", c.ID, "num", c.Num, "ref", c.Ref)
+	// Wait for the initial queue
+	c.queue = <-c.InitialQueue
 
 	// Immediate termination for an excessive message
 	c.WS.SetReadLimit(60 * 1024)
@@ -238,12 +218,6 @@ func (c *Client) connectedWithQueued() bool {
 				fLog.Debug("Channel closed")
 				return false
 			}
-			if env.Intent == "BadLastnum" {
-				// This message is for us
-				fLog.Debug("Got BadLastnum intent")
-				c.closeWith("Bad lastnum")
-				return false
-			}
 			// Message needs to go onto the queue
 			fLog.Debug("Adding to queue", "env", niceEnv(env))
 			c.queue.Add(env)
@@ -310,7 +284,7 @@ func (c *Client) connectedNoneQueued() {
 			if env.Intent == "BadLastnum" {
 				// This message is for us
 				fLog.Debug("Got BadLastnum intent")
-				c.closeWith("Bad lastnum")
+				c.closeWith("Bad lastnum", CloseBadLastnum)
 				return
 			}
 			// We should send this message
@@ -345,11 +319,12 @@ func (c *Client) connectedNoneQueued() {
 	}
 }
 
-// closeWith closes the connection with the given error message
-func (c *Client) closeWith(desc string) {
+// closeWith closes the connection with the given error message and
+// and error code.
+func (c *Client) closeWith(desc string, code int) {
 	c.WS.WriteControl(
 		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.ClosePolicyViolation, desc),
+		websocket.FormatCloseMessage(code, desc),
 		time.Now().Add(writeTimeout),
 	)
 	c.WS.Close()

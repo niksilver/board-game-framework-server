@@ -297,6 +297,22 @@ func (ws *tConn) expectNoMessage(timeout int) error {
 	return fmt.Errorf("Wrongly got message '%s'", string(rr.msg))
 }
 
+// expectClose expects a connection closed with a given close error code
+// and within a timeout period (milliseconds).
+// If it gets something else it returns an error.
+// Future reads must be from the `tConn`, not the `websocket.Conn`.
+func (ws *tConn) expectClose(code int, timeout int) error {
+	rr, timedOut := ws.readMessage(timeout)
+	if timedOut {
+		return fmt.Errorf("Got timeout while expecting close")
+	}
+	if !websocket.IsCloseError(rr.err, code) {
+		return fmt.Errorf("Expected error code %d but got error %s",
+			code, rr.err.Error())
+	}
+	return nil
+}
+
 // Test if an http.Response contains a string. Nil if it does, error
 // if the response or its body is nil, or if it doesn't contain the string.
 func responseContains(r *http.Response, subs string) error {

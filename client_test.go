@@ -267,8 +267,8 @@ func TestClient_DisconnectsIfNoPongs(t *testing.T) {
 	WG.Wait()
 }
 
-func TestClient_NewClientWithBadLastnumShouldNotConnect(t *testing.T) {
-	fLog := tLog.New("fn", "TestClient_NewClientWithBadLastnumShouldNotConnect")
+func TestClient_NewClientWithBadLastnumGetsClosedWebsocket(t *testing.T) {
+	fLog := tLog.New("fn", "TestClient_NewClientWithBadLastnumGetsClosedWebsocket")
 
 	// Just for this test, lower the reconnectionTimeout so that a
 	// Leaver message is triggered reasonably quickly.
@@ -288,17 +288,19 @@ func TestClient_NewClientWithBadLastnumShouldNotConnect(t *testing.T) {
 	game := "/cl.bad.lastnum"
 
 	// Connect the client with a silly lastnum
-	ws, resp, err := dial(serv, game, "BAD", 1029)
-	if err == nil {
-		t.Fatal("Didn't get error connecting")
-		ws.Close()
+	ws, _, err := dial(serv, game, "BAD", 1029)
+	if err != nil {
+		t.Fatalf("Error dialing BAD: %s", err.Error())
 	}
-	if err := responseContains(resp, "num"); err != nil {
+	tws := newTConn(ws, "BAD")
+	defer tws.close()
+	if err := tws.expectClose(CloseBadLastnum, 500); err != nil {
 		t.Errorf("Bad response body: %s", err.Error())
 	}
 
 	// Tidy up, and check everything in the main app finishes
 	fLog.Debug("Tidying up")
+	tws.close()
 	WG.Wait()
 }
 

@@ -24,9 +24,9 @@ func init() {
 	// Application-side logging
 	aLog.SetHandler(
 		log15.LvlFilterHandler(
-			log15.LvlError,
+			// log15.LvlError,
 			// log15.LvlInfo,
-			// log15.LvlDebug,
+			log15.LvlDebug,
 			// log15.DiscardHandler(),
 			log15.StdoutHandler,
 			// FlushingStdoutHandler{},

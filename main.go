@@ -68,8 +68,7 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start the client handler running.
-	// It will upgrade the request if it's a good request
+	// Create the client
 	ClientID := ClientIDOrNew(r.URL.RawQuery)
 	lastNum := lastNum(r.URL.RawQuery)
 	num := lastNum
@@ -81,12 +80,23 @@ func bounceHandler(w http.ResponseWriter, r *http.Request) {
 		Num:          num,
 		WS:           nil,
 		Hub:          hub,
-		InitialQueue: make(chan *PossibleQueue),
+		InitialQueue: make(chan *Queue),
 		Pending:      make(chan *Envelope),
 	}
 	c.Ref = fmt.Sprintf("%p", c)
-	aLog.Info("Starting client", "path", r.URL.Path, "id", c.ID, "ref", c.Ref)
-	c.Start(w, r)
+
+	// Try to upgrade to a websocket
+	ws, err := upgrader.Upgrade(w, r, make(http.Header))
+	if err != nil {
+		aLog.Warn("Upgrade error", "error", err)
+		Shub.Release(c.Hub, c)
+		return
+	}
+	c.WS = ws
+
+	// Start the client handler running.
+	aLog.Info("Connected client", "path", r.URL.Path, "id", c.ID, "ref", c.Ref)
+	c.Start()
 }
 
 // lastNum gets the integer given by the lastnum query parameter,
