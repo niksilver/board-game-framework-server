@@ -609,8 +609,10 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	// Connect the first client with a bad lastnum
 	game := "/hub.bad.then.good"
 	ws1, _, err := dial(serv, game, "BADGOOD", 3056)
-	if err == nil {
-		t.Fatalf("Expected error dialling for ws1, but got none")
+	tws1 := newTConn(ws1, "BADGOOD")
+	defer tws1.close()
+	if err := tws1.expectClose(CloseBadLastnum, 500); err != nil {
+		t.Error(err)
 	}
 
 	// Sleep for a short time to allow the first client to time out
@@ -619,8 +621,10 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 
 	// Connect the second client with a bad lastnum
 	ws2, _, err := dial(serv, game, "BADGOOD", 3056)
-	if err == nil {
-		t.Fatalf("Expected error dialling for ws2, but got none")
+	tws2 := newTConn(ws2, "BADGOOD")
+	defer tws2.close()
+	if err := tws2.expectClose(CloseBadLastnum, 500); err != nil {
+		t.Error(err)
 	}
 
 	// Sleep for a short time to allow the second client to time out
