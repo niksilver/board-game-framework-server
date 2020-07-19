@@ -1,0 +1,14 @@
+Description=Board game framework
+
+Wants=network.target
+After=syslog.target network-online.target multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/home/bgf/bin/boardgameframework.sh
+Restart=on-failure
+RestartSec=10
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
