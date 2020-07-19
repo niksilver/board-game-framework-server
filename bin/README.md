@@ -3,8 +3,8 @@
 For a linux server that uses `systemctl`:
 
 1 Put this `bin` directory in `/home/bgf`.
-1 Ensure the shell wrapper is executable: `chmod a+x boardgameserver.sh`.
-1 Copy the server binary `boardgameserver` into this directory.
+1 Ensure the shell wrapper is executable: `chmod a+x boardgameframework.sh`.
+1 Copy the compiled server binary `boardgameframework` into this directory.
 
 Install the service config, start it now, and ensure it starts on future reboots:
 
