@@ -2,9 +2,15 @@
 
 For a linux server that uses `systemctl`:
 
-1 Put this `bin` directory in `/home/bgf`.
-1 Ensure the shell wrapper is executable: `chmod a+x boardgameframework.sh`.
-1 Copy the compiled server binary `boardgameframework` into this directory.
+```
+go build -o boardgameframework
+mv boardgameframework bin
+chmod a+x bin/boardgameframework.sh
+chmod a+x bin/ssl-proxy
+chmod a+x bin/ssl-proxy.sh
+cp -r bin ..
+cd ../bin
+```
 
 Install the service config, start it now, and ensure it starts on future reboots:
 
@@ -14,4 +20,12 @@ sudo systemctl start boardgameframework
 sudo systemctl enable boardgameframework
 ```
 
-Log files are per day, in directory `/var/log/boardgameframework`.
+Do the same for the SSL proxy:
+
+```
+sudo cp ssl-proxy.service /etc/systemd/system
+sudo systemctl start ssl-proxy
+sudo systemctl enable ssl-proxy
+```
+
+The log file is in `/var/log/boardgameframework`.
