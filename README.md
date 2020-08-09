@@ -12,8 +12,8 @@ client to all the other clients in the same game (instance).
 Thus a message may be saying "This is my move", or "Please give me an
 up to date state of the game", or anything else.
 
-Inspired by the [open source version of Codenames](https://github.com/jbowens/codenames/).
-
 This repo holds just the server code. Documentation, plus the client code
 (for Elm and a bit of JavaScript), and examples are at
-[https://github.com/niksilver/board-game-framework].
+[https://github.com/niksilver/board-game-framework](https://github.com/niksilver/board-game-framework).
+
+Inspired by the [open source version of Codenames](https://github.com/jbowens/codenames/).
