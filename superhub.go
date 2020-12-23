@@ -15,9 +15,9 @@ const MaxClients = 50
 // Superhub gives a hub to a client. The client needs to
 // release the hub when it's done with it.
 type Superhub struct {
-	hubs   map[string]*Hub    // From game name (path) to hub
+	hubs   map[string]*Hub    // From game room (path) to hub
 	counts map[*Hub]int       // Count of clients using each hub
-	names  map[*Hub]string    // From hub pointer to game name
+	rooms  map[*Hub]string    // From hub pointer to game rooms
 	tOut   map[*Hub][]*Client // Clients timing out per hub
 	mux    sync.RWMutex       // To ensure concurrency-safety
 }
@@ -25,41 +25,41 @@ type Superhub struct {
 // newSuperhub creates an empty superhub, which will hold many hubs.
 func NewSuperhub() *Superhub {
 	return &Superhub{
-		hubs:   make(map[string]*Hub),    // From game name to hub
+		hubs:   make(map[string]*Hub),    // From game room to hub
 		counts: make(map[*Hub]int),       // Count of cl's using a hub
-		names:  make(map[*Hub]string),    // From hub ptr to game name
+		rooms:  make(map[*Hub]string),    // From hub ptr to game room
 		tOut:   make(map[*Hub][]*Client), // Clients timing out per hub
 		mux:    sync.RWMutex{},           // For concurrency-safety
 	}
 }
 
-// Hub gets the hub for the given game name. If necessary a new hub
+// Hub gets the hub for the given game room. If necessary a new hub
 // will be created and start processing messages.
-// Will return an error if there are too many clients in the game.
-func (sh *Superhub) Hub(name string) (*Hub, error) {
-	aLog.Debug("superhub.Hub, Entering", "name", name)
+// Will return an error if there are too many clients in the room.
+func (sh *Superhub) Hub(room string) (*Hub, error) {
+	aLog.Debug("superhub.Hub, Entering", "room", room)
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
-	aLog.Debug("superhub.Hub, giving hub", "name", name)
+	aLog.Debug("superhub.Hub, giving hub", "room", room)
 
-	if h, okay := sh.hubs[name]; okay {
+	if h, okay := sh.hubs[room]; okay {
 		if sh.counts[h] >= MaxClients {
 			return nil, fmt.Errorf("Maximum number of clients in game")
 		}
 		sh.counts[h]++
 		aLog.Debug("superhub.Hub, existing hub",
-			"name", name, "count", sh.counts[h])
+			"room", room, "count", sh.counts[h])
 		return h, nil
 	}
 
-	aLog.Debug("superhub.Hub, new hub", "name", name)
-	h := NewHub(name)
-	sh.hubs[name] = h
+	aLog.Debug("superhub.Hub, new hub", "room", room)
+	h := NewHub(room)
+	sh.hubs[room] = h
 	sh.counts[h] = 1
-	sh.names[h] = name
-	aLog.Debug("superhub.Hub, starting hub", "name", name)
+	sh.rooms[h] = room
+	aLog.Debug("superhub.Hub, starting hub", "room", room)
 	h.Start()
-	aLog.Debug("superhub.Hub, exiting", "name", name)
+	aLog.Debug("superhub.Hub, exiting", "room", room)
 
 	return h, nil
 }
@@ -70,7 +70,7 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 	sh.mux.Lock()
 	defer sh.mux.Unlock()
 
-	fLog := aLog.New("fn", "superhub.Release", "hubname", sh.names[h],
+	fLog := aLog.New("fn", "superhub.Release", "hubroom", sh.rooms[h],
 		"cid", c.ID, "cref", c.Ref)
 	fLog.Debug("Starting reconnection timeout")
 
@@ -84,7 +84,7 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 			defer sh.mux.Unlock()
 
 			fLog := aLog.New("fn", "superhub.Release.AfterFunc",
-				"hubname", sh.names[h], "cid", c.ID, "cref", c.Ref)
+				"hubroom", sh.rooms[h], "cid", c.ID, "cref", c.Ref)
 			fLog.Debug("Entering")
 			// Delete the client from the list
 			sh.tOut[h] = remove(sh.tOut[h], c)
@@ -102,10 +102,10 @@ func (sh *Superhub) Release(h *Hub, c *Client) {
 func (sh *Superhub) decrement(h *Hub) {
 	sh.counts[h]--
 	if sh.counts[h] == 0 {
-		aLog.Debug("superhub.decrement, deleting hub", "name", sh.names[h])
-		delete(sh.hubs, sh.names[h])
+		aLog.Debug("superhub.decrement, deleting hub", "room", sh.rooms[h])
+		delete(sh.hubs, sh.rooms[h])
 		delete(sh.counts, h)
-		delete(sh.names, h)
+		delete(sh.rooms, h)
 		delete(sh.tOut, h)
 	}
 }
@@ -125,8 +125,8 @@ func (sh *Superhub) Count() int {
 	sh.mux.RLock()
 	defer sh.mux.RUnlock()
 
-	for _, name := range sh.names {
-		aLog.Debug("superhub.count, counting", "name", name)
+	for _, room := range sh.rooms {
+		aLog.Debug("superhub.count, counting", "room", room)
 	}
-	return len(sh.names)
+	return len(sh.rooms)
 }

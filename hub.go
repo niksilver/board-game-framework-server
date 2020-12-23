@@ -10,7 +10,8 @@ import (
 
 // Hub collects all related clients
 type Hub struct {
-	name string
+	// Name of the room that this hub represents
+	room string
 	// All clients that have been seen, and the superhub is tracking
 	clients map[*Client]status
 	// Num for the next envelope num
@@ -57,10 +58,10 @@ type Envelope struct {
 	Body   []byte   // Original raw message from the sending client
 }
 
-// NewHub creates a new, empty Hub with a given name.
-func NewHub(name string) *Hub {
+// NewHub creates a new, empty Hub with a given room name.
+func NewHub(room string) *Hub {
 	return &Hub{
-		name:    name,
+		room:    room,
 		clients: make(map[*Client]status),
 		num:     0,
 		Pending: make(chan *Message),
@@ -71,7 +72,7 @@ func NewHub(name string) *Hub {
 
 // Start starts goroutines running that process the messages.
 func (h *Hub) Start() {
-	aLog.Debug("Adding for receiveInt", "fn", "hub.Start", "name", h.name)
+	aLog.Debug("Adding for receiveInt", "fn", "hub.Start", "room", h.room)
 	WG.Add(1)
 	go h.receiveInt()
 }
@@ -79,7 +80,7 @@ func (h *Hub) Start() {
 // receiveInt is a goroutine that listens for pending messages, and sends
 // them to the connected clients, buffers them for all known clients.
 func (h *Hub) receiveInt() {
-	fLog := aLog.New("fn", "hub.receiveInt", "name", h.name)
+	fLog := aLog.New("fn", "hub.receiveInt", "room", h.room)
 
 	defer fLog.Debug("Goroutine done")
 	defer WG.Done()
