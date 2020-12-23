@@ -285,10 +285,10 @@ func TestClient_NewClientWithBadLastnumGetsClosedWebsocket(t *testing.T) {
 
 	// Connect a client with an unavailable lastnum
 
-	game := "/cl.bad.lastnum"
+	room := "/cl.bad.lastnum"
 
 	// Connect the client with a silly lastnum
-	ws, _, err := dial(serv, game, "BAD", 1029)
+	ws, _, err := dial(serv, room, "BAD", 1029)
 	if err != nil {
 		t.Fatalf("Error dialing BAD: %s", err.Error())
 	}

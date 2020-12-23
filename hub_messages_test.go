@@ -75,10 +75,10 @@ func TestHubMsgs_WelcomeIsFromExistingClients(t *testing.T) {
 	// Connect 3 clients in turn. Each existing client should
 	// receive a joiner message about each new client.
 
-	game := "/hub.welcome.from.existing"
+	room := "/hub.welcome.from.existing"
 
 	// Connect the first client, and consume the welcome message
-	ws1, _, err := dial(serv, game, "WF1", -1)
+	ws1, _, err := dial(serv, room, "WF1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestHubMsgs_WelcomeIsFromExistingClients(t *testing.T) {
 	}
 
 	// Connect the second client, and consume intro messages
-	ws2, _, err := dial(serv, game, "WF2", -1)
+	ws2, _, err := dial(serv, room, "WF2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestHubMsgs_WelcomeIsFromExistingClients(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "WF3", -1)
+	ws3, _, err := dial(serv, room, "WF3", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 	// We'll make sure all the clients have been added to hub, and force
 	// the order by waiting on messages.
 
-	game := "/hub.basic.envelope"
+	room := "/hub.basic.envelope"
 
 	// We'll want to check From, To and Time fields, as well as
 	// message contents.
@@ -160,7 +160,7 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 1 joins normally
 
-	ws1, _, err := dial(serv, game, "EN1", -1)
+	ws1, _, err := dial(serv, room, "EN1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 2 joins, and client 1 gets a joiner message
 
-	ws2, _, err := dial(serv, game, "EN2", -1)
+	ws2, _, err := dial(serv, room, "EN2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestHubMsgs_BasicMessageEnvelopeIsCorrect(t *testing.T) {
 
 	// Client 3 joins, and clients 1 and 2 get joiner messages.
 
-	ws3, _, err := dial(serv, game, "EN3", -1)
+	ws3, _, err := dial(serv, room, "EN3", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,10 +277,10 @@ func TestHubMsgs_JoinerMessagesHappen(t *testing.T) {
 	// Connect 3 clients in turn. Each existing client should
 	// receive a joiner message about each new client.
 
-	game := "/hub.joiner.messages"
+	room := "/hub.joiner.messages"
 
 	// Connect the first client
-	ws1, _, err := dial(serv, game, "JM1", -1)
+	ws1, _, err := dial(serv, room, "JM1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestHubMsgs_JoinerMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "JM2", -1)
+	ws2, _, err := dial(serv, room, "JM2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestHubMsgs_JoinerMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "JM3", -1)
+	ws3, _, err := dial(serv, room, "JM3", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,10 +432,10 @@ func TestHubMsgs_LeaverMessagesHappen(t *testing.T) {
 	// Connect 3 clients in turn. When one leaves the remaining
 	// ones should get leaver messages.
 
-	game := "/hub.leaver.messages"
+	room := "/hub.leaver.messages"
 
 	// Connect the first client
-	ws1, _, err := dial(serv, game, "LV1", -1)
+	ws1, _, err := dial(serv, room, "LV1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestHubMsgs_LeaverMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "LV2", -1)
+	ws2, _, err := dial(serv, room, "LV2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestHubMsgs_LeaverMessagesHappen(t *testing.T) {
 	}
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "LV3", -1)
+	ws3, _, err := dial(serv, room, "LV3", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -652,10 +652,10 @@ func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
 	// message about the second approx 100ms after it received its own
 	// welcome message
 
-	game := "/hub.time.ms"
+	room := "/hub.time.ms"
 
 	// Connect the first client and get the time from the welcome message
-	ws1, _, err := dial(serv, game, "TIM1", -1)
+	ws1, _, err := dial(serv, room, "TIM1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +673,7 @@ func TestHubMsgs_TimeIsInMilliseconds(t *testing.T) {
 
 	// Wait 100ms and connect the second client
 	time.Sleep(100 * time.Millisecond)
-	ws2, _, err := dial(serv, game, "TIM2", -1)
+	ws2, _, err := dial(serv, room, "TIM2", -1)
 	defer ws2.Close()
 	if err != nil {
 		t.Fatal(err)

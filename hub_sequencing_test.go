@@ -37,7 +37,7 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	// We'll make sure all the clients have been added to hub, and force
 	// the order by waiting on messages.
 
-	game := "/hub.bounces.to.other"
+	room := "/hub.bounces.to.other"
 
 	// We'll want to check From, To and Time fields, as well as
 	// message contents.
@@ -45,7 +45,7 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 
 	// Client 1 joins normally
 
-	ws1, _, err := dial(serv, game, "CL1", -1)
+	ws1, _, err := dial(serv, room, "CL1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 
 	// Client 2 joins, and client 1 gets a joiner message
 
-	ws2, _, err := dial(serv, game, "CL2", -1)
+	ws2, _, err := dial(serv, room, "CL2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 
 	// Client 3 joins, and clients 1 and 2 get joiner messages.
 
-	ws3, _, err := dial(serv, game, "CL3", -1)
+	ws3, _, err := dial(serv, room, "CL3", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,8 +190,8 @@ func TestHubSeq_GeneralChaos(t *testing.T) {
 		case i < 10 || action < 0.25:
 			// New client join
 			id := "CHAOS" + strconv.Itoa(i)
-			game := "/hub.chaos." + strconv.Itoa(rand.Intn(2))
-			ws, _, err := dial(serv, game, id, -1)
+			room := "/hub.chaos." + strconv.Itoa(rand.Intn(2))
+			ws, _, err := dial(serv, room, id, -1)
 			defer func() {
 				ws.Close()
 			}()
@@ -364,7 +364,7 @@ func TestHubSeq_ReconnectingClientsDontMissMessages(t *testing.T) {
 	// occasionally disconnect and reconnect. The other will send messages.
 	// The first client should receive them all.
 
-	game := "/hub.reconnecting"
+	room := "/hub.reconnecting"
 	listener := sync.WaitGroup{}
 	sent, rcvd := []string{}, []string{}
 	listenerReady := make(chan bool, 0) // Just closed to signal ready
@@ -379,7 +379,7 @@ func TestHubSeq_ReconnectingClientsDontMissMessages(t *testing.T) {
 		conns := 0
 		gotFirstEnv := false
 		for {
-			ws1, _, err := dial(serv, game, "WS1", num)
+			ws1, _, err := dial(serv, room, "WS1", num)
 			if err != nil {
 				ws1.Close()
 				t.Fatal(err)
@@ -448,7 +448,7 @@ func TestHubSeq_ReconnectingClientsDontMissMessages(t *testing.T) {
 
 	// Send some messages on one connection, up to 50ms apart
 
-	ws2, _, err := dial(serv, game, "WS2", -1)
+	ws2, _, err := dial(serv, room, "WS2", -1)
 	fLog.Debug("Dialled", "id", "WS2", "num", -1)
 	if err != nil {
 		ws2.Close()
@@ -534,8 +534,8 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	defer serv.Close()
 
 	// Connect the first client
-	game := "/hub.reconn.bad.unsent"
-	ws1a, _, err := dial(serv, game, "REC1", -1)
+	room := "/hub.reconn.bad.unsent"
+	ws1a, _, err := dial(serv, room, "REC1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,7 +546,7 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "REC2", -1)
+	ws2, _, err := dial(serv, room, "REC2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -567,7 +567,7 @@ func TestHubSeq_ReconnectionWithBadLastnumShouldGetClosed(t *testing.T) {
 	// We'll connect a replacement for ws1a with a lastnum of something that
 	// doesn't exist. We should be able to connect, then get a closed
 	// connection.
-	ws1b, _, err := dial(serv, game, "REC1", num+10)
+	ws1b, _, err := dial(serv, room, "REC1", num+10)
 	if err != nil {
 		t.Fatalf("wsb1: Got error dialling")
 	}
@@ -607,8 +607,8 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	defer serv.Close()
 
 	// Connect the first client with a bad lastnum
-	game := "/hub.bad.then.good"
-	ws1, _, err := dial(serv, game, "BADGOOD", 3056)
+	room := "/hub.bad.then.good"
+	ws1, _, err := dial(serv, room, "BADGOOD", 3056)
 	tws1 := newTConn(ws1, "BADGOOD")
 	defer tws1.close()
 	if err := tws1.expectClose(CloseBadLastnum, 500); err != nil {
@@ -620,7 +620,7 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	time.Sleep(reconnectionTimeout / 2)
 
 	// Connect the second client with a bad lastnum
-	ws2, _, err := dial(serv, game, "BADGOOD", 3056)
+	ws2, _, err := dial(serv, room, "BADGOOD", 3056)
 	tws2 := newTConn(ws2, "BADGOOD")
 	defer tws2.close()
 	if err := tws2.expectClose(CloseBadLastnum, 500); err != nil {
@@ -632,7 +632,7 @@ func TestHubSeq_ConnectionWithBadLastnumShouldAllowLaterGoodConn(t *testing.T) {
 	time.Sleep(reconnectionTimeout * 3 / 2)
 
 	// Connect the third client
-	ws3, _, err := dial(serv, game, "BADGOOD", -1)
+	ws3, _, err := dial(serv, room, "BADGOOD", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -671,8 +671,8 @@ func TestHubSeq_ConnectionWithBadLastnumShouldNotBeALeaver(t *testing.T) {
 	defer serv.Close()
 
 	// Connect the first client with a bad lastnum
-	game := "/hub.good.follows"
-	ws1, _, err := dial(serv, game, "FOL1", 3056)
+	room := "/hub.good.follows"
+	ws1, _, err := dial(serv, room, "FOL1", 3056)
 	tws1 := newTConn(ws1, "FOL")
 	defer tws1.close()
 	if err := tws1.expectClose(CloseBadLastnum, 500); err != nil {
@@ -680,7 +680,7 @@ func TestHubSeq_ConnectionWithBadLastnumShouldNotBeALeaver(t *testing.T) {
 	}
 
 	// Connect the second client with a good lastnum
-	ws2, _, err := dial(serv, game, "FOL2", -1)
+	ws2, _, err := dial(serv, room, "FOL2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -736,8 +736,8 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	defer serv.Close()
 
 	// Connect a client and read the num
-	game := "/hub.reconn.too.late"
-	ws1a, _, err := dial(serv, game, "REC1", -1)
+	room := "/hub.reconn.too.late"
+	ws1a, _, err := dial(serv, room, "REC1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -755,7 +755,7 @@ func TestHubSeq_ReconnWithGoodLastnumTooLateShouldGetClosed(t *testing.T) {
 	tws1a.close()
 	time.Sleep(500 * time.Millisecond)
 
-	ws1b, _, err := dial(serv, game, "REC1", lastnum)
+	ws1b, _, err := dial(serv, room, "REC1", lastnum)
 	if err != nil {
 		t.Fatalf("wsb1: Got error dialling")
 	}
@@ -787,8 +787,8 @@ func TestHubSeq_ReconnWithNoLastNumShouldSignalLeaverAndJoiner(t *testing.T) {
 	defer serv.Close()
 
 	// Connect the first client
-	game := "/hub.reconn.bad.unsent"
-	ws1a, _, err := dial(serv, game, "NOLAST1", -1)
+	room := "/hub.reconn.bad.unsent"
+	ws1a, _, err := dial(serv, room, "NOLAST1", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,7 +799,7 @@ func TestHubSeq_ReconnWithNoLastNumShouldSignalLeaverAndJoiner(t *testing.T) {
 	}
 
 	// Connect the second client
-	ws2, _, err := dial(serv, game, "NOLAST2", -1)
+	ws2, _, err := dial(serv, room, "NOLAST2", -1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -819,7 +819,7 @@ func TestHubSeq_ReconnWithNoLastNumShouldSignalLeaverAndJoiner(t *testing.T) {
 	// We should get a welcome message, and the other client should get
 	// a leaver and then a joiner message.
 	// ws1a should get a closed connection.
-	ws1b, _, err := dial(serv, game, "NOLAST1", -1)
+	ws1b, _, err := dial(serv, room, "NOLAST1", -1)
 	if err != nil {
 		t.Fatalf("Error dialling for ws1b: %s", err)
 	}
@@ -909,7 +909,7 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 	defer serv.Close()
 
 	// Initial values
-	game := "/hub.takeovers"
+	room := "/hub.takeovers"
 	w := sync.WaitGroup{}
 
 	// For some ID, we'll have one client join, a second take over,
@@ -918,7 +918,7 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 	joinAndTakeOver := func(id string) {
 		defer w.Done()
 
-		ws1, _, err := dial(serv, game, id, -1)
+		ws1, _, err := dial(serv, room, id, -1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -932,7 +932,7 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 
 		// Have the second take over
 
-		ws2, _, err := dial(serv, game, id, lastnum)
+		ws2, _, err := dial(serv, room, id, lastnum)
 		if err != nil {
 			t.Fatalf("Error taking over id=%s, err=%s", id, err.Error())
 		}
@@ -957,7 +957,7 @@ func TestHubSeq_ExpectUniqueClientIDsEvenWithTakeOversAndDisconnections(t *testi
 	}
 
 	// Create a client that will listen and check envelopes
-	ws0, _, err := dial(serv, game, "JTOLISTENER", -1)
+	ws0, _, err := dial(serv, room, "JTOLISTENER", -1)
 	if err != nil {
 		t.Fatal(err)
 	}

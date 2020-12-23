@@ -5,10 +5,10 @@ intelligence is in the clients; the server simply provides the
 communication.
 
 Clients (players) connect to a server using websockets.
-Each one joins a group, which is an instance of a shared game.
+Each one joins a "room", which is an instance of a shared game.
 Clients are expected to maintain the state of the game.
 All the server does is bounce any incoming message from a sending
-client to all the other clients in the same game (instance).
+client to all the other clients in the same room.
 Thus a message may be saying "This is my move", or "Please give me an
 up to date state of the game", or anything else.
 
