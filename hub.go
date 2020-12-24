@@ -50,12 +50,13 @@ type Message struct {
 // all fields will be filled in by the hub. The fields have to be exported
 // to be processed by json marshalling.
 type Envelope struct {
-	From   []string // Client id this is from
-	To     []string // Ids of all clients this is going to
-	Num    int      // A number reference for this envelope
-	Time   int64    // Server time when sent, in seconds since the epoch
-	Intent string   // What the message is intended to convey
-	Body   []byte   // Original raw message from the sending client
+	From    []string // Client id this is from
+	To      []string // Ids of all clients this is going to
+	Num     int      // A number reference for this envelope
+	Time    int64    // Server time when sent, in seconds since the epoch
+	Intent  string   // What the message is intended to convey
+	Receipt bool     // If this is a peer message from the receiving client
+	Body    []byte   // Original raw message from the sending client
 }
 
 // NewHub creates a new, empty Hub with a given room name.
@@ -197,12 +198,13 @@ readingLoop:
 
 				toCls := h.joinedExcluding(c)
 				envP := &Envelope{
-					From:   []string{c.ID},
-					To:     ids(toCls),
-					Num:    h.num,
-					Time:   nowMs(),
-					Intent: "Peer",
-					Body:   msg.Body,
+					From:    []string{c.ID},
+					To:      ids(toCls),
+					Num:     h.num,
+					Time:    nowMs(),
+					Intent:  "Peer",
+					Receipt: false,
+					Body:    msg.Body,
 				}
 
 				caseLog.Debug("Sending peer messages")
@@ -213,12 +215,13 @@ readingLoop:
 
 				caseLog.Debug("Sending receipt")
 				envR := &Envelope{
-					From:   envP.From,
-					To:     envP.To,
-					Num:    envP.Num,
-					Time:   envP.Time,
-					Intent: "Receipt",
-					Body:   envP.Body,
+					From:    envP.From,
+					To:      envP.To,
+					Num:     envP.Num,
+					Time:    envP.Time,
+					Intent:  "Peer",
+					Receipt: true,
+					Body:    envP.Body,
 				}
 				h.send(c, envR)
 

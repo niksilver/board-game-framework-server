@@ -102,7 +102,10 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 
 	// We expect 10 receipts to client 1 and 10 messages to clients 2 and 3
 
-	testMessage := func(tws *tConn, twsName string, intent string, i int) {
+	const isReceipt = true
+	const isNotReceipt = false
+
+	testPeerMessage := func(tws *tConn, twsName string, expReceipt bool, i int) {
 		env, err := tws.readEnvelope(500, "tws=%s, i=%d", twsName, i)
 		if err != nil {
 			t.Fatal(err)
@@ -112,9 +115,14 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 				twsName, i, env.Body, msgs[i],
 			)
 		}
-		if env.Intent != intent {
-			t.Errorf("%s, i=%d, got intent '%s' but expected '%s'",
-				twsName, i, env.Intent, intent,
+		if env.Intent != "Peer" {
+			t.Errorf("%s, i=%d, got intent '%s' but expected 'Peer'",
+				twsName, i, env.Intent,
+			)
+		}
+		if env.Receipt != expReceipt {
+			t.Errorf("%s, i=%d, got receipt '%t' but expected '%t'",
+				twsName, i, env.Receipt, expReceipt,
 			)
 		}
 		if !sameElements(env.From, []string{"CL1"}) {
@@ -130,9 +138,9 @@ func TestHubSeq_BouncesToOtherClients(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		testMessage(tws1, "tws1", "Receipt", i)
-		testMessage(tws2, "tws3", "Peer", i)
-		testMessage(tws3, "tws3", "Peer", i)
+		testPeerMessage(tws1, "tws1", isReceipt, i)
+		testPeerMessage(tws2, "tws3", isNotReceipt, i)
+		testPeerMessage(tws3, "tws3", isNotReceipt, i)
 	}
 
 	// Tidy up and check everything in the main app finishes
